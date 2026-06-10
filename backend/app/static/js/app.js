@@ -76,11 +76,18 @@ function openJobModal(jobId, title) {
   const progressPct = modal.querySelector('.progress-pct');
   const statusEl = modal.querySelector('.job-status-inline');
 
+  const spinner = modal.querySelector('.spinner');
+  const resultIcon = modal.querySelector('.job-result-icon');
+  const footer = modal.querySelector('.job-modal-footer');
+
   logViewer.innerHTML = '';
   progressBar.style.width = '0%';
   progressPct.textContent = '0%';
   statusEl.textContent = 'running';
   statusEl.className = 'job-status-inline job-status running';
+  spinner.style.display = '';
+  resultIcon.style.display = 'none';
+  footer.style.display = 'none';
 
   modal.style.display = 'flex';
 
@@ -123,6 +130,10 @@ function openJobModal(jobId, title) {
     }
     statusEl.textContent = status;
     statusEl.className = `job-status-inline job-status ${status}`;
+    spinner.style.display = 'none';
+    resultIcon.textContent = status === 'success' ? '✅' : status === 'failed' ? '❌' : '⚠️';
+    resultIcon.style.display = '';
+    footer.style.display = 'flex';
     stopPolling();
     if (state.tab === 'backup' || state.tab === 'restore') loadBackups();
   }
@@ -187,10 +198,12 @@ function openJobModal(jobId, title) {
     startPolling();
   }
 
-  modal.querySelector('.modal-close').onclick = () => {
+  const closeModal = () => {
     stopPolling();
     modal.style.display = 'none';
   };
+  modal.querySelector('.modal-close').onclick = closeModal;
+  modal.querySelector('.job-modal-ok').onclick = closeModal;
 }
 
 // ─── BACKUP TAB ───────────────────────────────────────────────────────────────
