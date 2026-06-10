@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>uverse comeback</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+</head>
+<body>
+<div class="app">
+  <header>
+    <a class="logo" href="/">
+      <div class="logo-icon">🔄</div>
+      <div>
+        <div>uverse <strong>comeback</strong></div>
+        <div class="logo-sub">Docker Backup & Restore</div>
+      </div>
+    </a>
+    <nav>
+      <button class="nav-btn active" data-tab="backup">📦 Backup</button>
+      <button class="nav-btn" data-tab="restore">🔄 Restore</button>
+      <button class="nav-btn" data-tab="deploy">🚀 Deploy</button>
+      <button class="nav-btn" data-tab="jobs" style="position:relative">
+        📋 Jobs
+        <span id="jobs-badge" style="
+          display:none;
+          position:absolute;
+          top:4px;right:4px;
+          background:var(--blue);
+          color:white;
+          font-size:10px;
+          font-weight:700;
+          width:16px;height:16px;
+          border-radius:50%;
+          align-items:center;
+          justify-content:center;
+        ">0</span>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ─── BACKUP TAB ─────────────────────────────────────────────────── -->
+    <div id="tab-backup" class="tab-panel active">
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start">
+
+        <div class="card">
+          <div class="card-header">
+            <h2>🐳 Containers</h2>
+            <div class="flex gap-2">
+              <button class="btn btn-outline btn-sm" onclick="selectAll()">All</button>
+              <button class="btn btn-outline btn-sm" onclick="selectNone()">None</button>
+              <button class="btn btn-outline btn-sm" onclick="loadContainers()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="container-grid" class="container-grid"></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="card">
+            <div class="card-header">
+              <h2>⚙️ Backup Options</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Label (optional)</label>
+                <input id="opt-label" type="text" placeholder="e.g. pre-upgrade backup"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+                         padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+              </div>
+              <label class="form-check">
+                <input id="opt-images" type="checkbox">
+                <div>
+                  <div>Save Docker images</div>
+                  <div class="text-sm text-muted">Embeds images in the archive (larger, fully portable)</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>📦 What gets backed up</h2>
+            </div>
+            <div class="card-body" style="font-size:13px;color:var(--text-muted)">
+              <div style="display:grid;gap:8px">
+                <div>🐳 <strong style="color:var(--text)">Container config</strong><br>Entrypoint, env vars, ports, labels, restart policy</div>
+                <div>💾 <strong style="color:var(--text)">Docker volumes</strong><br>All named volume data</div>
+                <div>📁 <strong style="color:var(--text)">Bind mounts</strong><br>Host paths mounted in containers</div>
+                <div>🗄 <strong style="color:var(--text)">Databases</strong><br>Auto-detected MySQL, PostgreSQL, MongoDB, Redis</div>
+                <div>🌐 <strong style="color:var(--text)">Networks</strong><br>Custom network configurations</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span id="selection-count" class="text-muted text-sm"></span>
+            <button id="btn-start-backup" class="btn btn-primary" onclick="startBackup()" disabled>
+              📦 Start Backup
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── DEPLOY TAB ─────────────────────────────────────────────────── -->
+    <div id="tab-deploy" class="tab-panel">
+      <div style="display:grid;gap:20px">
+
+        <!-- Plantillas -->
+        <div class="card">
+          <div class="card-header">
+            <h2>🚀 Plantillas de despliegue</h2>
+            <button class="btn btn-outline btn-sm" onclick="loadTemplates()">↻ Refresh</button>
+          </div>
+          <div class="card-body">
+            <div class="alert info" style="margin-bottom:20px">
+              ℹ️ Stacks preconfigurados. Tras el deploy se genera automáticamente una copia de seguridad.
+            </div>
+            <div id="templates-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px"></div>
+          </div>
+        </div>
+
+        <!-- Despliegue personalizado -->
+        <div class="card">
+          <div class="card-header">
+            <h2>🛠 Despliegue personalizado</h2>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm" id="custom-tab-compose" onclick="switchCustomTab('compose')"
+                style="background:var(--blue);color:white">📄 Docker Compose</button>
+              <button class="btn btn-outline btn-sm" id="custom-tab-dockerfile" onclick="switchCustomTab('dockerfile')">🐳 Dockerfile</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="alert info" style="margin-bottom:16px">
+              ℹ️ Pega un <strong>docker-compose.yml</strong> o un <strong>Dockerfile</strong> para desplegar cualquier stack. Se creará un backup automático tras el deploy.
+            </div>
+
+            <!-- Compose panel -->
+            <div id="custom-panel-compose">
+              <div class="form-group">
+                <label class="form-label">Nombre del despliegue</label>
+                <input id="compose-name" type="text" placeholder="mi-app"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+                <div class="form-hint">Usado como etiqueta y en el backup automático</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">docker-compose.yml</label>
+                <textarea id="compose-yaml" rows="18" placeholder="version: '3'&#10;services:&#10;  web:&#10;    image: nginx:latest&#10;    ports:&#10;      - '8080:80'"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical"></textarea>
+              </div>
+              <div style="display:flex;justify-content:flex-end">
+                <button class="btn btn-primary" onclick="startComposeDeploy()">🚀 Desplegar compose</button>
+              </div>
+            </div>
+
+            <!-- Dockerfile panel -->
+            <div id="custom-panel-dockerfile" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Nombre del contenedor</label>
+                  <input id="df-name" type="text" placeholder="mi-contenedor"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Tag de la imagen</label>
+                  <input id="df-image-tag" type="text" placeholder="mi-app:latest"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Dockerfile</label>
+                <textarea id="df-content" rows="12" placeholder="FROM ubuntu:22.04&#10;RUN apt-get update&#10;CMD [&quot;bash&quot;]"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical"></textarea>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Puertos <span class="text-muted">(host:contenedor, uno por línea)</span></label>
+                  <textarea id="df-ports" rows="3" placeholder="8080:80&#10;8443:443"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:monospace;resize:none"></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Variables de entorno <span class="text-muted">(KEY=VALUE, una por línea)</span></label>
+                  <textarea id="df-env" rows="3" placeholder="MY_VAR=valor&#10;OTRO=123"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:monospace;resize:none"></textarea>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Restart policy</label>
+                <select id="df-restart"
+                  style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+                  <option value="unless-stopped" selected>unless-stopped</option>
+                  <option value="always">always</option>
+                  <option value="on-failure">on-failure</option>
+                  <option value="no">no</option>
+                </select>
+              </div>
+              <div style="display:flex;justify-content:flex-end">
+                <button class="btn btn-primary" onclick="startDockerfileDeploy()">🚀 Build &amp; Deploy</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─── RESTORE TAB ────────────────────────────────────────────────── -->
+    <div id="tab-restore" class="tab-panel">
+      <div style="display:grid;gap:16px">
+
+        <div class="card">
+          <div class="card-header">
+            <h2>📦 Available Backups</h2>
+            <button class="btn btn-outline btn-sm" onclick="loadBackups();loadTestResources()">↻ Refresh</button>
+          </div>
+          <div class="card-body">
+            <div class="alert info" style="margin-bottom:16px">
+              ℹ️ Restore recreates networks, volumes, databases and containers on any Docker host. Use <strong>🧪 Test</strong> to restore safely alongside the originals.
+            </div>
+            <div id="backup-list" class="backup-list"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>🧪 Test Containers &amp; Volumes</h2>
+            <button class="btn btn-outline btn-sm" onclick="loadTestResources()">↻ Refresh</button>
+          </div>
+          <div class="card-body">
+            <div id="test-resources">
+              <div class="text-muted text-sm">Loading...</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─── JOBS TAB ───────────────────────────────────────────────────── -->
+    <div id="tab-jobs" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <h2>📋 Job History</h2>
+          <button class="btn btn-outline btn-sm" onclick="loadJobs()">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="jobs-list"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ─── JOB PROGRESS MODAL ──────────────────────────────────────────────── -->
+<div id="job-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="spinner"></div>
+        <h3 class="modal-title">Job</h3>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="job-status-inline job-status running">running</span>
+        <button class="modal-close" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span class="text-muted text-sm">Progress</span>
+        <span class="progress-pct text-sm">0%</span>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar" style="width:0%"></div>
+      </div>
+      <div class="log-viewer"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── RESTORE MODAL ───────────────────────────────────────────────────── -->
+<div id="restore-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🔄 Restore Backup</h3>
+      <button class="modal-close" onclick="closeRestoreModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="test-mode-banner alert" style="display:none;background:rgba(210,153,34,0.1);border-color:var(--yellow);color:var(--yellow);margin-bottom:12px">
+        🧪 <strong>Test mode</strong> — containers get a prefix, no ports mapped, bind mounts skipped, restart=no. Safe to run alongside originals.
+      </div>
+      <div class="alert warning">
+        ⚠️ Restoring from <strong class="restore-backup-name"></strong>
+      </div>
+
+      <div class="form-group">
+        <div class="form-label">Select containers to restore</div>
+        <div id="restore-container-list" style="display:grid;gap:4px;margin-top:8px"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Name prefix <span class="text-muted">(optional — e.g. "test-" to run safely alongside originals)</span></label>
+        <input id="opt-prefix" type="text" placeholder='e.g. test-  →  test-statusmon'
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+                 padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+        <div class="form-hint">With a prefix: Docker volumes are prefixed, bind mounts skipped, no port mapping, restart=no</div>
+      </div>
+
+      <div class="form-group">
+        <div class="form-label">Options</div>
+        <label class="form-check">
+          <input id="opt-overwrite" type="checkbox">
+          <div>
+            <div>Remove existing containers</div>
+            <div class="text-sm text-muted">Stop and remove containers that already exist before restoring</div>
+          </div>
+        </label>
+        <label class="form-check">
+          <input id="opt-start" type="checkbox" checked>
+          <div>
+            <div>Start containers after restore</div>
+            <div class="text-sm text-muted">Also restores databases after containers are running</div>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeRestoreModal()">Cancel</button>
+      <button class="btn btn-blue" onclick="startRestore()">🔄 Start Restore</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── DEPLOY MODAL ────────────────────────────────────────────────────── -->
+<div id="deploy-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="deploy-template-icon" style="font-size:22px">🚀</span>
+        <h3>Desplegar <span class="deploy-template-name"></span></h3>
+      </div>
+      <button class="modal-close" onclick="closeDeployModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert warning" style="margin-bottom:16px">
+        ⚠️ Se crearán contenedores nuevos en este host Docker. Asegúrate de que los puertos no están en uso.
+      </div>
+      <div id="deploy-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeDeployModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="startDeploy()">🚀 Desplegar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

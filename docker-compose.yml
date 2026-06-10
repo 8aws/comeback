@@ -1,0 +1,23 @@
+services:
+  comeback:
+    image: espiralvex/comeback:latest
+    build: ./backend
+    container_name: uverse-comeback
+    restart: unless-stopped
+    ports:
+      - "7731:7731"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host
+      - comeback_backups:/backups
+      - ./backend/app:/app/app                  # whole app from host → no rebuild for any code change
+    environment:
+      - BACKUP_PATH=/backups
+      - HOST_ROOT=/host
+      - TZ=Europe/Madrid
+    labels:
+      - "com.uverse.service=comeback"
+
+volumes:
+  comeback_backups:
+    name: uverse-comeback-backups
