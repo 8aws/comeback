@@ -17,8 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
+# /api/auth/status is the only API route that never requires a session
 HEALTHCHECK --interval=30s --timeout=5s \
-  CMD curl -f http://localhost:7731/api/docs || exit 1
+  CMD curl -f http://localhost:7731/api/auth/status || exit 1
 
 EXPOSE 7731
 
