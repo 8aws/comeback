@@ -68,8 +68,11 @@ async def restore_bind_mount(source_path: str, archive: Path, job, host_root: st
     os.makedirs(host_dest, exist_ok=True)
     await job.log(LogLevel.info, f"Restoring bind mount: {source_path}")
 
+    # The archive contains the original top-level dir name (tar -C parent name);
+    # strip it so contents land directly in host_dest — otherwise restores nest
+    # as /path/name/name, and path-remapped destinations keep the old dir name.
     proc = await asyncio.create_subprocess_exec(
-        "tar", "xzf", str(archive), "-C", str(host_dest),
+        "tar", "xzf", str(archive), "--strip-components=1", "-C", str(host_dest),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

@@ -6,6 +6,7 @@ Herramienta self-hosted de **backup, restauración y despliegue de contenedores 
 
 - **Backup completo de contenedores**: configuración (`docker inspect`), volúmenes con nombre, bind mounts y dumps de bases de datos (MySQL/MariaDB, PostgreSQL, MongoDB, Redis) en un único archivo comprimido y verificado con SHA-256.
 - **Restauración con un clic**: recrea redes, volúmenes y contenedores con su configuración original. Modo test con prefijo de nombre para restaurar en paralelo sin tocar el original.
+- **Migraciones entre servidores**: descarga un backup, súbelo en otra instancia de comeback y restaura reasignando las rutas de bind mounts que difieran entre máquinas (p. ej. `/share/Container` de QNAP → `/DATA/AppData` de ZimaOS).
 - **Despliegue de stacks**: plantillas integradas (Ente Photos…), YAML de Docker Compose o Dockerfile inline, con progreso en tiempo real, rollback automático en caso de error y backup automático tras cada deploy exitoso.
 - **Actualizaciones de contenedores**: detecta imágenes nuevas en el registry (estilo Watchtower) y actualiza con un clic — backup previo opcional, recreación con la configuración original y rollback automático si la nueva versión no arranca.
 - **Verificación de archivos**: comprueba integridad (checksum + manifest) sin restaurar.

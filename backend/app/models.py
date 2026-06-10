@@ -73,6 +73,9 @@ class RestoreRequest(BaseModel):
     overwrite_existing: bool = False
     start_after_restore: bool = True
     name_prefix: Optional[str] = None
+    # old path prefix → new path prefix, for cross-host migrations
+    # e.g. {"/share/Container": "/DATA/AppData"}
+    path_map: Optional[dict[str, str]] = None
 
 
 class BackupManifest(BaseModel):

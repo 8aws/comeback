@@ -1,10 +1,12 @@
 import asyncio
+import hashlib
 import json
 import tarfile
 from pathlib import Path
 
+import aiofiles
 import humanize
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from ..config import settings
@@ -82,6 +84,53 @@ def download_backup(backup_name: str):
     if not archive.exists():
         raise HTTPException(status_code=404, detail="Backup not found")
     return FileResponse(archive, media_type="application/gzip", filename=archive.name)
+
+
+@router.post("/upload")
+async def upload_backup(file: UploadFile) -> dict:
+    """Receive a backup archive from another comeback instance (migrations)."""
+    name = Path(file.filename or "").name   # strip any path components
+    if not name.endswith(".tar.gz"):
+        raise HTTPException(status_code=400, detail="Solo se aceptan archivos .tar.gz")
+
+    settings.backup_dir.mkdir(parents=True, exist_ok=True)
+    dest = settings.backup_dir / name
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"Ya existe un backup llamado {name}")
+
+    # Stream to a temp file computing the checksum on the fly
+    tmp = dest.with_suffix(".uploading")
+    sha = hashlib.sha256()
+    size = 0
+    try:
+        async with aiofiles.open(tmp, "wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                sha.update(chunk)
+                size += len(chunk)
+                await out.write(chunk)
+
+        manifest = _read_manifest_from_archive(tmp)
+        if not manifest or "containers" not in manifest:
+            raise HTTPException(status_code=400,
+                                detail="El archivo no es un backup válido de comeback (sin manifest.json)")
+
+        tmp.rename(dest)
+        sidecar = settings.backup_dir / f"{name.replace('.tar.gz', '')}.sha256"
+        sidecar.write_text(f"{sha.hexdigest()}  {name}\n")
+    except HTTPException:
+        tmp.unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Error guardando el archivo: {e}")
+
+    return {
+        "name": name.replace(".tar.gz", ""),
+        "size_bytes": size,
+        "size_human": humanize.naturalsize(size),
+        "container_count": len(manifest.get("containers", [])),
+        "checksum": sha.hexdigest(),
+    }
 
 
 @router.post("/start")

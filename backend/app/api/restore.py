@@ -30,6 +30,7 @@ async def start_restore(req: RestoreRequest) -> dict:
         req.overwrite_existing,
         req.start_after_restore,
         name_prefix=prefix,
+        path_map=req.path_map,
     ))
     return {"job_id": job.id}
 

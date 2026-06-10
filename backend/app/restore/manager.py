@@ -60,7 +60,23 @@ async def _pull_or_load_image(image_name: str, images_dir: Path, job) -> bool:
         return False
 
 
-def _build_run_kwargs(spec: dict, name_prefix: str = "") -> tuple[dict, list[str]]:
+def _remap_path(path: str, path_map: dict[str, str] | None) -> str:
+    """Rewrite a host path using prefix mappings (longest prefix wins).
+
+    {"/share/Container": "/DATA/AppData"} turns
+    /share/Container/app/data → /DATA/AppData/app/data
+    """
+    if not path_map or not path:
+        return path
+    for old in sorted(path_map, key=len, reverse=True):
+        old_norm = old.rstrip("/")
+        if path == old_norm or path.startswith(old_norm + "/"):
+            return path_map[old].rstrip("/") + path[len(old_norm):]
+    return path
+
+
+def _build_run_kwargs(spec: dict, name_prefix: str = "",
+                      path_map: dict[str, str] | None = None) -> tuple[dict, list[str]]:
     """Convert docker inspect spec back into docker-py run() kwargs."""
     config = spec.get("config", {})
     host_config = spec.get("host_config", {})
@@ -111,7 +127,8 @@ def _build_run_kwargs(spec: dict, name_prefix: str = "") -> tuple[dict, list[str
         elif m.get("type") == "bind":
             # In prefixed mode skip bind mounts to avoid touching live host data
             if not name_prefix:
-                volume_list.append(f"{m['source']}:{m['destination']}:{m.get('mode', 'rw')}")
+                source = _remap_path(m["source"], path_map)
+                volume_list.append(f"{source}:{m['destination']}:{m.get('mode', 'rw')}")
     if volume_list:
         kwargs["volumes"] = volume_list
 
@@ -138,6 +155,7 @@ async def run_restore(
     overwrite: bool,
     start_after: bool,
     name_prefix: str = "",
+    path_map: dict[str, str] | None = None,
 ):
     job.started_at = datetime.utcnow()
     job.status = JobStatus.running
@@ -231,7 +249,10 @@ async def run_restore(
                     target_vol = f"{name_prefix}{vol['name']}" if name_prefix else vol["name"]
                     await restore_docker_volume(target_vol, archive_path, job)
                 elif vol.get("type") == "bind" and not name_prefix:
-                    await restore_bind_mount(vol["source"], archive_path, job, settings.host_root)
+                    bind_dest = _remap_path(vol["source"], path_map)
+                    if bind_dest != vol["source"]:
+                        await job.log(LogLevel.info, f"Ruta remapeada: {vol['source']} → {bind_dest}")
+                    await restore_bind_mount(bind_dest, archive_path, job, settings.host_root)
                 elif vol.get("type") == "bind" and name_prefix:
                     await job.log(LogLevel.info, f"Skipping bind mount restore (test mode): {vol.get('source')}")
 
@@ -241,7 +262,7 @@ async def run_restore(
 
             # Step 6: Create container
             try:
-                run_kwargs, all_networks = _build_run_kwargs(spec, name_prefix)
+                run_kwargs, all_networks = _build_run_kwargs(spec, name_prefix, path_map)
                 await job.log(LogLevel.info, f"Creating container {effective_name}...")
                 container = client.containers.create(**run_kwargs)
 

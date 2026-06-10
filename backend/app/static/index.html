@@ -237,6 +237,27 @@
 
         <div class="card">
           <div class="card-header">
+            <h2>📤 Importar backup</h2>
+          </div>
+          <div class="card-body">
+            <div class="alert info" style="margin-bottom:12px">
+              ℹ️ Sube un backup descargado de otra instancia de comeback (migraciones entre servidores). Al restaurar podrás reasignar las rutas de bind mounts que difieran entre máquinas.
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <input type="file" id="upload-input" accept=".gz,.tar.gz" style="display:none" onchange="uploadBackup(this)">
+              <button class="btn btn-primary" onclick="document.getElementById('upload-input').click()">📤 Seleccionar archivo .tar.gz</button>
+              <div id="upload-progress" style="display:none;flex:1;min-width:200px">
+                <div style="background:var(--surface2);border-radius:6px;overflow:hidden;height:8px">
+                  <div id="upload-bar" style="background:var(--blue);height:100%;width:0%;transition:width 0.2s"></div>
+                </div>
+                <div id="upload-status" class="text-muted text-sm" style="margin-top:4px"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
             <h2>📦 Available Backups</h2>
             <button class="btn btn-outline btn-sm" onclick="loadBackups();loadTestResources()">↻ Refresh</button>
           </div>
@@ -323,6 +344,11 @@
       <div class="form-group">
         <div class="form-label">Select containers to restore</div>
         <div id="restore-container-list" style="display:grid;gap:4px;margin-top:8px"></div>
+      </div>
+
+      <div class="form-group" id="restore-pathmap-group" style="display:none">
+        <div class="form-label">🔀 Rutas de bind mounts <span class="text-muted">(edítalas si difieren en este servidor)</span></div>
+        <div id="restore-pathmap-list" style="display:grid;gap:6px;margin-top:8px"></div>
       </div>
 
       <div class="form-group">

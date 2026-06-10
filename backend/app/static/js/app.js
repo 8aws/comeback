@@ -353,11 +353,81 @@ async function deleteBackup(name) {
 let _restoreTarget = null;
 let _restorePrefix = '';
 
+function uploadBackup(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';   // allow re-selecting the same file later
+
+  const wrap = document.getElementById('upload-progress');
+  const bar = document.getElementById('upload-bar');
+  const status = document.getElementById('upload-status');
+  wrap.style.display = 'block';
+  bar.style.width = '0%';
+  status.textContent = `Subiendo ${file.name}…`;
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/backups/upload');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      bar.style.width = `${pct}%`;
+      status.textContent = `Subiendo ${file.name}… ${pct}%`;
+    }
+  };
+  xhr.onload = () => {
+    if (xhr.status === 401) { showLogin(); wrap.style.display = 'none'; return; }
+    if (xhr.status >= 200 && xhr.status < 300) {
+      const r = JSON.parse(xhr.responseText);
+      bar.style.width = '100%';
+      status.textContent = `✅ ${r.name} (${r.size_human}, ${r.container_count} contenedores)`;
+      showToast(`Backup importado: ${r.name}`, 'success');
+      loadBackups();
+    } else {
+      let detail = xhr.responseText;
+      try { detail = JSON.parse(xhr.responseText).detail; } catch (e) {}
+      status.textContent = `❌ ${detail}`;
+      showToast(`Error importando: ${detail}`, 'error');
+    }
+  };
+  xhr.onerror = () => {
+    status.textContent = '❌ Error de conexión';
+    showToast('Error de conexión durante la subida', 'error');
+  };
+  xhr.send(fd);
+}
+
+async function _loadRestorePathMap(name) {
+  const group = document.getElementById('restore-pathmap-group');
+  const list = document.getElementById('restore-pathmap-list');
+  group.style.display = 'none';
+  list.innerHTML = '';
+  try {
+    const manifest = await API.backups.manifest(name);
+    const sources = [...new Set((manifest.volumes || [])
+      .filter(v => v.type === 'bind' && v.source)
+      .map(v => v.source))];
+    if (!sources.length) return;
+    list.innerHTML = sources.map((s, i) => `
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
+        <code class="text-sm" style="overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(s)}">${escapeHtml(s)}</code>
+        <span class="text-muted">→</span>
+        <input type="text" data-original="${escapeHtml(s)}" value="${escapeHtml(s)}"
+          style="background:var(--surface2);border:1px solid var(--border);color:var(--text);
+                 padding:6px 8px;border-radius:6px;font-size:12px;font-family:monospace">
+      </div>`).join('');
+    group.style.display = 'block';
+  } catch (e) { /* manifest unreadable — restore can still proceed without remap */ }
+}
+
 function openRestoreModal(name, prefix = '') {
   _restoreTarget = name;
   _restorePrefix = prefix;
   const backup = state.backups.find(b => b.name === name);
   const modal = document.getElementById('restore-modal');
+  _loadRestorePathMap(name);
 
   // Test mode banner
   const testBanner = modal.querySelector('.test-mode-banner');
@@ -406,17 +476,27 @@ async function startRestore() {
   const checks = document.querySelectorAll('#restore-container-list input[type=checkbox]');
   const selected = [...checks].filter(c => c.checked).map(c => c.dataset.cname);
 
+  // Collect modified bind mount paths → path_map
+  const pathMap = {};
+  document.querySelectorAll('#restore-pathmap-list input[data-original]').forEach(inp => {
+    const orig = inp.dataset.original;
+    const val = inp.value.trim();
+    if (val && val !== orig) pathMap[orig] = val;
+  });
+
+  const target = _restoreTarget;
   closeRestoreModal();
 
   try {
     const { job_id } = await API.restore.start({
-      backup_id: _restoreTarget,
+      backup_id: target,
       container_names: selected.length ? selected : null,
       overwrite_existing: overwrite,
       start_after_restore: start,
       name_prefix: prefix || null,
+      path_map: Object.keys(pathMap).length ? pathMap : null,
     });
-    openJobModal(job_id, `Restore — ${_restoreTarget}`);
+    openJobModal(job_id, `Restore — ${target}`);
     window._scheduleJobPoll?.();
   } catch (e) {
     showToast(`Restore error: ${e.message}`, 'error');
