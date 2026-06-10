@@ -43,7 +43,11 @@ volumes:
 docker compose up -d
 ```
 
-### Opción B — Desde el código fuente (GitHub)
+### Opción B — ZimaOS / CasaOS
+
+En ZimaOS: **App Store → Install a customized app** y pega el contenido de [`zimaos/docker-compose.yml`](zimaos/docker-compose.yml) (incluye los metadatos `x-casaos` para icono, descripción y puerto en la interfaz). Cambia `AUTH_PASSWORD` antes de instalar.
+
+### Opción C — Desde el código fuente (GitHub)
 
 ```bash
 git clone https://github.com/8aws/comeback.git

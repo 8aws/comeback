@@ -1,0 +1,63 @@
+# Comeback para ZimaOS / CasaOS
+# Instalación: ZimaOS → App Store → Install a customized app → pegar este YAML
+# Cambia AUTH_PASSWORD antes de instalar.
+
+name: comeback
+services:
+  comeback:
+    image: espiralvex/comeback:latest
+    container_name: uverse-comeback
+    restart: unless-stopped
+    ports:
+      - "7731:7731"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host
+      - /DATA/AppData/comeback/backups:/backups
+    environment:
+      - BACKUP_PATH=/backups
+      - HOST_ROOT=/host
+      - TZ=Europe/Madrid
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=cambia-esta-contraseña
+    x-casaos:
+      volumes:
+        - container: /backups
+          description:
+            en_us: Backup archives storage
+            es_es: Almacenamiento de archivos de backup
+      ports:
+        - container: "7731"
+          description:
+            en_us: Web UI port
+            es_es: Puerto de la interfaz web
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: comeback
+  author: uverse.es
+  developer: uverse.es
+  icon: https://raw.githubusercontent.com/8aws/comeback/main/backend/app/static/icon.svg
+  tagline:
+    en_us: Docker backup, restore & deploy with web UI
+    es_es: Backup, restauración y despliegue de Docker con interfaz web
+  description:
+    en_us: >-
+      Self-hosted Docker backup tool. Capture full container configuration,
+      volumes, bind mounts and database dumps into a single verified archive.
+      Restore stacks in one click and deploy new services from Compose YAML
+      or Dockerfile, with real-time progress and automatic rollback.
+    es_es: >-
+      Herramienta self-hosted de backup de Docker. Captura la configuración
+      completa de contenedores, volúmenes, bind mounts y dumps de bases de
+      datos en un único archivo verificado. Restaura stacks con un clic y
+      despliega nuevos servicios desde Compose YAML o Dockerfile, con progreso
+      en tiempo real y rollback automático.
+  title:
+    en_us: Comeback
+  category: Utilities
+  port_map: "7731"
+  scheme: http
+  index: /
