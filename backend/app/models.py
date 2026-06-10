@@ -17,6 +17,7 @@ class JobType(str, Enum):
     restore = "restore"
     verify = "verify"
     deploy = "deploy"
+    update = "update"
 
 
 class LogLevel(str, Enum):
@@ -59,6 +60,11 @@ class BackupRequest(BaseModel):
     include_images: bool = False
     compress: bool = True
     label: Optional[str] = None
+
+
+class UpdateRequest(BaseModel):
+    container_id: str
+    backup_first: bool = True
 
 
 class RestoreRequest(BaseModel):

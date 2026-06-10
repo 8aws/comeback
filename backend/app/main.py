@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from . import auth
-from .api import containers, backup, restore, jobs, cleanup, deploy
+from .api import containers, backup, restore, jobs, cleanup, deploy, updates
 
 logger = logging.getLogger("comeback")
 
@@ -38,6 +38,7 @@ app.include_router(restore.router)
 app.include_router(jobs.router)
 app.include_router(cleanup.router)
 app.include_router(deploy.router)
+app.include_router(updates.router)
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

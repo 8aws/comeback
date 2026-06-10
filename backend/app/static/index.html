@@ -21,6 +21,7 @@
       <button class="nav-btn active" data-tab="backup">📦 Backup</button>
       <button class="nav-btn" data-tab="restore">🔄 Restore</button>
       <button class="nav-btn" data-tab="deploy">🚀 Deploy</button>
+      <button class="nav-btn" data-tab="updates">⬆️ Updates</button>
       <button class="nav-btn" data-tab="jobs" style="position:relative">
         📋 Jobs
         <span id="jobs-badge" style="
@@ -207,6 +208,26 @@
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ─── UPDATES TAB ────────────────────────────────────────────────── -->
+    <div id="tab-updates" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <h2>⬆️ Actualizaciones de imágenes</h2>
+          <button class="btn btn-outline btn-sm" onclick="loadUpdates()">↻ Comprobar</button>
+        </div>
+        <div class="card-body">
+          <div class="alert info" style="margin-bottom:16px">
+            ℹ️ Compara el digest local de cada contenedor con el del registry. La actualización hace backup previo (opcional), descarga la imagen, recrea el contenedor con su misma configuración y revierte automáticamente si la nueva versión no arranca.
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer">
+            <input type="checkbox" id="update-backup-first" checked>
+            <span>📦 Hacer backup antes de actualizar</span>
+          </label>
+          <div id="updates-list"><div class="text-muted text-sm">Pulsa Comprobar para buscar actualizaciones…</div></div>
+        </div>
       </div>
     </div>
 

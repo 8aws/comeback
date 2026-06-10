@@ -109,24 +109,27 @@ def _pull_if_needed(client, image: str):
         client.images.pull(image)
 
 
-async def _pull_with_progress(client, image: str, job: Job):
+async def _pull_with_progress(client, image: str, job: Job, force: bool = False):
     """
     Pull image streaming real-time progress per layer:
       "php:7-apache — 45.2 MB / 120.0 MB (37%) @ 3.1 MB/s"
     Uses client.api (low-level APIClient) for streaming events.
     Runs the blocking iterator in a thread executor so the event loop
     stays free for WebSocket messages.
+
+    force=True skips the local cache check — required by the updater,
+    where the point is fetching a newer image for a tag we already have.
     """
     import time as _time
     await job.log(LogLevel.info, f"Pulling {image}…")
 
-    # Already cached?
-    try:
-        client.images.get(image)
-        await job.log(LogLevel.success, f"Imagen en caché: {image}")
-        return
-    except Exception:
-        pass
+    if not force:
+        try:
+            client.images.get(image)
+            await job.log(LogLevel.success, f"Imagen en caché: {image}")
+            return
+        except Exception:
+            pass
 
     loop = asyncio.get_event_loop()
 

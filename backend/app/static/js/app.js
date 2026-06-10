@@ -21,6 +21,7 @@ function navigate(tab) {
   if (tab === 'restore') { loadBackups(); loadTestResources(); }
   if (tab === 'jobs') loadJobs();
   if (tab === 'deploy') loadTemplates();
+  if (tab === 'updates') loadUpdates();
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -664,6 +665,65 @@ async function cleanupPrefix(prefix) {
   }
 }
 
+// ─── UPDATES TAB ──────────────────────────────────────────────────────────────
+const UPDATE_STATUS = {
+  update:  { label: 'Actualización disponible', cls: 'warning', icon: '⬆️' },
+  current: { label: 'Al día',                   cls: 'success', icon: '✅' },
+  pinned:  { label: 'Fijada por digest',        cls: '',        icon: '📌' },
+  local:   { label: 'Imagen local',             cls: '',        icon: '🔨' },
+  unknown: { label: 'Desconocido',              cls: '',        icon: '❓' },
+};
+
+async function loadUpdates() {
+  const list = document.getElementById('updates-list');
+  list.innerHTML = '<div class="text-muted text-sm">Consultando registries…</div>';
+  try {
+    const items = await API.updates.list();
+    if (!items.length) {
+      list.innerHTML = '<div class="text-muted text-sm">No hay contenedores.</div>';
+      return;
+    }
+    list.innerHTML = items.map(u => {
+      const st = UPDATE_STATUS[u.status] || UPDATE_STATUS.unknown;
+      let action = '';
+      if (u.status === 'update') {
+        action = u.is_self
+          ? `<button class="btn btn-outline btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬇ Solo pull</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬆️ Actualizar</button>`;
+      }
+      return `
+      <div class="container-item" style="display:flex;align-items:center;gap:12px;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          ${statusDot(u.running)}
+          <div style="min-width:0">
+            <div><strong>${escapeHtml(u.name)}</strong>${u.is_self ? ' ' + badge('comeback', '') : ''}</div>
+            <div class="text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(u.image)}</div>
+            ${u.detail ? `<div class="text-muted text-sm">${escapeHtml(u.detail)}</div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+          ${badge(`${st.icon} ${st.label}`, st.cls)}
+          ${action}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="alert error">Error comprobando actualizaciones: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function startUpdate(containerId, name) {
+  const backupFirst = document.getElementById('update-backup-first').checked;
+  if (!confirm(`¿Actualizar "${name}"?${backupFirst ? '\nSe hará un backup previo.' : '\n⚠️ SIN backup previo.'}`)) return;
+  try {
+    const { job_id } = await API.updates.start({ container_id: containerId, backup_first: backupFirst });
+    openJobModal(job_id, `Update: ${name}`);
+    window._scheduleJobPoll?.();
+  } catch (e) {
+    showToast(`Update error: ${e.message}`, 'error');
+  }
+}
+
 // ─── JOBS TAB ─────────────────────────────────────────────────────────────────
 async function loadJobs() {
   const list = document.getElementById('jobs-list');
@@ -685,7 +745,7 @@ function renderJobs() {
   list.innerHTML = state.jobs.map(j => `
     <div class="backup-item" style="cursor:pointer" onclick="viewJob('${j.id}')">
       <div class="backup-item-header">
-        <span style="font-size:20px">${j.type === 'backup' ? '📦' : j.type === 'restore' ? '🔄' : j.type === 'deploy' ? '🚀' : '✅'}</span>
+        <span style="font-size:20px">${j.type === 'backup' ? '📦' : j.type === 'restore' ? '🔄' : j.type === 'deploy' ? '🚀' : j.type === 'update' ? '⬆️' : '✅'}</span>
         <div style="flex:1">
           <div class="backup-name">${j.label}</div>
           <div class="text-sm text-muted">${fmt(j.created_at)}</div>

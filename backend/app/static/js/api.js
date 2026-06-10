@@ -42,6 +42,10 @@ const API = {
     compose: (body) => API.post('/api/deploy/compose', body),
     dockerfile: (body) => API.post('/api/deploy/dockerfile', body),
   },
+  updates: {
+    list: () => API.get('/api/updates'),
+    start: (body) => API.post('/api/updates/start', body),
+  },
   cleanup: {
     list: () => API.get('/api/cleanup/test'),
     remove: (prefix) => API.del(`/api/cleanup/test/${encodeURIComponent(prefix)}`),
