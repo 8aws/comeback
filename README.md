@@ -31,6 +31,8 @@ services:
       - BACKUP_PATH=/backups
       - HOST_ROOT=/host
       - TZ=Europe/Madrid
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=cambia-esta-contraseña
 
 volumes:
   comeback_backups:
@@ -70,10 +72,22 @@ Abre `http://tu-servidor:7731`. La documentación de la API está en `/api/docs`
 | `BACKUP_PATH` | `/backups` | Ruta de almacenamiento de archivos |
 | `HOST_ROOT` | `/host` | Punto de montaje del filesystem del host |
 | `TZ` | `Europe/Madrid` | Zona horaria de los logs |
+| `AUTH_USERNAME` | `admin` | Usuario del login web |
+| `AUTH_PASSWORD` | *(vacía)* | Contraseña del login. **Si está vacía, la API queda abierta sin autenticación** |
+
+## 🔐 Autenticación
+
+Define `AUTH_PASSWORD` para activar el login (sesión de 24 h por cookie). Incluye protección anti fuerza bruta: cada intento fallido añade un retardo de 1 s y tras 5 fallos la IP queda bloqueada 15 minutos.
+
+```yaml
+    environment:
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=una-contraseña-fuerte
+```
 
 ## ⚠️ Seguridad
 
-Comeback **no incluye autenticación** y tiene acceso completo al socket de Docker y al filesystem del host. No lo expongas nunca directamente a internet: úsalo solo en red local o detrás de un reverse proxy con autenticación (Cosmos Cloud, Authelia, etc.).
+Comeback tiene acceso completo al socket de Docker y al filesystem del host — equivale a acceso root en el servidor. Incluso con el login activado, no lo expongas directamente a internet: úsalo en red local o detrás de un reverse proxy con HTTPS y, a ser posible, autenticación adicional (Cosmos Cloud, Authelia, etc.).
 
 ## Licencia
 

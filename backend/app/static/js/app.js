@@ -709,8 +709,60 @@ async function viewJob(id) {
   }
 }
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login-overlay').style.display = 'flex';
+}
+
+function hideLogin() {
+  document.getElementById('login-overlay').style.display = 'none';
+}
+
+async function initAuth() {
+  try {
+    const r = await fetch('/api/auth/status');
+    const s = await r.json();
+    if (s.auth_enabled && !s.authenticated) {
+      showLogin();
+      return false;
+    }
+  } catch (e) { /* backend not ready — let normal error handling kick in */ }
+  return true;
+}
+
+async function submitLogin(ev) {
+  ev.preventDefault();
+  const errBox = document.getElementById('login-error');
+  errBox.style.display = 'none';
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('login-user').value,
+        password: document.getElementById('login-pass').value,
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      errBox.textContent = data.detail || `Error ${r.status}`;
+      errBox.style.display = 'block';
+      return;
+    }
+    hideLogin();
+    document.getElementById('login-pass').value = '';
+    navigate(state.tab || 'backup');
+  } catch (e) {
+    errBox.textContent = 'Error de conexión';
+    errBox.style.display = 'block';
+  }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('login-form').addEventListener('submit', submitLogin);
+  await initAuth();
+
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => navigate(btn.dataset.tab));
   });

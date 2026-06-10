@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from ..auth import COOKIE_NAME, validate_session
 from ..job_manager import job_manager
 from ..models import JobStatus
 
@@ -23,6 +24,9 @@ def get_job(job_id: str):
 
 @router.websocket("/{job_id}/ws")
 async def job_websocket(websocket: WebSocket, job_id: str):
+    if not validate_session(websocket.cookies.get(COOKIE_NAME)):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     job = job_manager.get(job_id)
     if not job:

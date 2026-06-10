@@ -1,20 +1,24 @@
 const API = {
+  _check(r) {
+    if (r.status === 401 && typeof showLogin === 'function') showLogin();
+    return r;
+  },
   async get(url) {
-    const r = await fetch(url);
+    const r = API._check(await fetch(url));
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
   async post(url, body) {
-    const r = await fetch(url, {
+    const r = API._check(await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+    }));
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
   async del(url) {
-    const r = await fetch(url, { method: 'DELETE' });
+    const r = API._check(await fetch(url, { method: 'DELETE' }));
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },

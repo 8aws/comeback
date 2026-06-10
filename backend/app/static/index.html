@@ -360,6 +360,30 @@
   </div>
 </div>
 
+<!-- Login overlay -->
+<div id="login-overlay" style="
+  display:none; position:fixed; inset:0; z-index:9999;
+  background:var(--bg, #0d1117);
+  align-items:center; justify-content:center;
+">
+  <form id="login-form" style="
+    width:min(360px, 90vw); padding:32px;
+    background:var(--card-bg, #161b22);
+    border:1px solid var(--border, #30363d);
+    border-radius:12px;
+    display:flex; flex-direction:column; gap:14px;
+  ">
+    <div style="text-align:center; font-size:36px;">🔄</div>
+    <div style="text-align:center; font-weight:700; font-size:18px;">uverse <strong>comeback</strong></div>
+    <input id="login-user" type="text" placeholder="Usuario" autocomplete="username" required
+           style="padding:10px 12px; border-radius:8px; border:1px solid var(--border, #30363d); background:var(--bg, #0d1117); color:inherit;">
+    <input id="login-pass" type="password" placeholder="Contraseña" autocomplete="current-password" required
+           style="padding:10px 12px; border-radius:8px; border:1px solid var(--border, #30363d); background:var(--bg, #0d1117); color:inherit;">
+    <div id="login-error" style="display:none; color:#f85149; font-size:13px; text-align:center;"></div>
+    <button type="submit" class="btn btn-primary" style="justify-content:center;">Entrar</button>
+  </form>
+</div>
+
 <script src="/static/js/api.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
