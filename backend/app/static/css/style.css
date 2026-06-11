@@ -468,3 +468,7 @@ main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; }
   .backup-meta { gap: 8px; }
   header { padding: 0 16px; }
 }
+
+/* ─── Container filters & problems ─── */
+.container-item.problem { border-color: var(--red); }
+.container-item.problem:hover { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }

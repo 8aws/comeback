@@ -57,6 +57,10 @@ def get_container_info(container) -> ContainerInfo:
         if bindings:
             ports[port] = bindings
 
+    state = attrs.get("State", {})
+    health = (state.get("Health") or {}).get("Status")
+    exit_code = state.get("ExitCode") if c.status == "exited" else None
+
     return ContainerInfo(
         id=c.id[:12],
         name=c.name,
@@ -69,6 +73,9 @@ def get_container_info(container) -> ContainerInfo:
         env_vars=config.get("Env") or [],
         ports=ports,
         db_type=db_type,
+        created=attrs.get("Created"),
+        health=health,
+        exit_code=exit_code,
     )
 
 

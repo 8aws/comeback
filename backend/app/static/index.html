@@ -57,6 +57,27 @@
             </div>
           </div>
           <div class="card-body">
+            <div id="container-toolbar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+              <div class="flex gap-2" id="filter-chips">
+                <button class="btn btn-sm filter-chip" data-filter="all" onclick="setContainerFilter('all')">Todos</button>
+                <button class="btn btn-sm filter-chip" data-filter="running" onclick="setContainerFilter('running')">Activos</button>
+                <button class="btn btn-sm filter-chip" data-filter="stopped" onclick="setContainerFilter('stopped')">Detenidos</button>
+                <button class="btn btn-sm filter-chip" data-filter="favorites" onclick="setContainerFilter('favorites')">⭐ Favoritos</button>
+              </div>
+              <select id="container-sort" onchange="setContainerSort(this.value)"
+                style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px">
+                <option value="name">A → Z</option>
+                <option value="created">Más recientes</option>
+                <option value="size">Mayor tamaño</option>
+              </select>
+              <div class="flex" style="gap:2px;margin-left:auto;align-items:center">
+                <span class="text-muted" style="font-size:11px;margin-right:4px">Columnas</span>
+                <button class="btn btn-sm col-btn" data-cols="1" onclick="setContainerCols(1)">1</button>
+                <button class="btn btn-sm col-btn" data-cols="2" onclick="setContainerCols(2)">2</button>
+                <button class="btn btn-sm col-btn" data-cols="3" onclick="setContainerCols(3)">3</button>
+                <button class="btn btn-sm col-btn" data-cols="4" onclick="setContainerCols(4)">4</button>
+              </div>
+            </div>
             <div id="container-grid" class="container-grid"></div>
           </div>
         </div>

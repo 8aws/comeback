@@ -53,6 +53,11 @@ class ContainerInfo(BaseModel):
     env_vars: list[str] = []
     ports: dict = {}
     db_type: Optional[str] = None
+    created: Optional[str] = None       # ISO timestamp
+    size_bytes: Optional[int] = None    # SizeRootFs from the daemon
+    size_human: Optional[str] = None
+    health: Optional[str] = None        # healthy | unhealthy | starting | None
+    exit_code: Optional[int] = None     # set when status == exited
 
 
 class BackupRequest(BaseModel):

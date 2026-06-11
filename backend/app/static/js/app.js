@@ -218,33 +218,132 @@ async function loadContainers() {
   }
 }
 
+// ─── Container view prefs (persisted) ──────────────────────────────────────
+const viewPrefs = {
+  get filter()    { return localStorage.getItem('cb_filter') || 'all'; },
+  set filter(v)   { localStorage.setItem('cb_filter', v); },
+  get sort()      { return localStorage.getItem('cb_sort') || 'name'; },
+  set sort(v)     { localStorage.setItem('cb_sort', v); },
+  get cols()      { return parseInt(localStorage.getItem('cb_cols') || '1', 10); },
+  set cols(v)     { localStorage.setItem('cb_cols', v); },
+  get favorites() { try { return new Set(JSON.parse(localStorage.getItem('cb_favs') || '[]')); } catch (e) { return new Set(); } },
+  set favorites(s){ localStorage.setItem('cb_favs', JSON.stringify([...s])); },
+  isCollapsed(g)  { return localStorage.getItem(`cb_acc_${g}`) === '1'; },
+  setCollapsed(g, v) { localStorage.setItem(`cb_acc_${g}`, v ? '1' : '0'); },
+};
+
+function setContainerFilter(f) { viewPrefs.filter = f; renderContainers(); }
+function setContainerSort(s)   { viewPrefs.sort = s; renderContainers(); }
+function setContainerCols(n)   { viewPrefs.cols = n; renderContainers(); }
+function toggleAccordion(group){ viewPrefs.setCollapsed(group, !viewPrefs.isCollapsed(group)); renderContainers(); }
+
+function toggleFavorite(ev, name) {
+  ev.stopPropagation();   // don't toggle selection
+  const favs = viewPrefs.favorites;
+  favs.has(name) ? favs.delete(name) : favs.add(name);
+  viewPrefs.favorites = favs;
+  renderContainers();
+}
+
+function _hasProblem(c) {
+  // unhealthy, crashed (exit != 0), restarting or dead — always pinned on top
+  return c.health === 'unhealthy'
+    || (c.status === 'exited' && c.exit_code !== 0 && c.exit_code != null)
+    || c.status === 'restarting'
+    || c.status === 'dead';
+}
+
+function _sortContainers(list) {
+  const sort = viewPrefs.sort;
+  return [...list].sort((a, b) => {
+    if (sort === 'created') return (b.created || '').localeCompare(a.created || '');
+    if (sort === 'size') return (b.size_bytes || 0) - (a.size_bytes || 0);
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function _containerItem(c) {
+  const sel = state.selectedContainers.has(c.id);
+  const favs = viewPrefs.favorites;
+  const volCount = (c.volumes || []).length;
+  const problem = _hasProblem(c);
+  const badges = [
+    problem ? badge(c.health === 'unhealthy' ? 'unhealthy' : `exit ${c.exit_code ?? '?'}`, 'db') : '',
+    c.db_type ? badge(c.db_type, 'db') : '',
+    volCount ? badge(`${volCount} vol`, 'vol') : '',
+    c.size_human ? badge(c.size_human, '') : '',
+  ].filter(Boolean).join('');
+
+  return `
+    <div class="container-item ${sel ? 'selected' : ''} ${problem ? 'problem' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')">
+      <div class="container-check"></div>
+      ${statusDot(c.running)}
+      <div class="flex" style="flex:1;min-width:0;flex-direction:column">
+        <div class="container-name">${escapeHtml(c.name)}</div>
+        <div class="container-image text-muted text-sm">${escapeHtml(c.image)}</div>
+      </div>
+      <div class="container-badges">${badges}</div>
+      <span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="Favorito"
+        style="cursor:pointer;font-size:15px;opacity:${favs.has(c.name) ? 1 : 0.25};flex-shrink:0">⭐</span>
+    </div>`;
+}
+
+function _accordionGroup(key, title, items, alwaysOpen = false) {
+  if (!items.length) return '';
+  const collapsed = !alwaysOpen && viewPrefs.isCollapsed(key);
+  const cols = viewPrefs.cols;
+  const grid = collapsed ? '' : `
+    <div style="display:grid;gap:10px;grid-template-columns:repeat(${cols},minmax(0,1fr));margin-top:8px">
+      ${items.map(_containerItem).join('')}
+    </div>`;
+  const chevron = alwaysOpen ? '' : `<span style="font-size:11px">${collapsed ? '▶' : '▼'}</span>`;
+  const header = alwaysOpen
+    ? `<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><strong style="font-size:13px">${title}</strong><span class="text-muted text-sm">(${items.length})</span></div>`
+    : `<div onclick="toggleAccordion('${key}')" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;margin-top:4px">
+         ${chevron}<strong style="font-size:13px">${title}</strong><span class="text-muted text-sm">(${items.length})</span>
+       </div>`;
+  return header + grid;
+}
+
 function renderContainers() {
   const grid = document.getElementById('container-grid');
+
+  // Toolbar state
+  document.querySelectorAll('.filter-chip').forEach(b =>
+    b.classList.toggle('btn-primary', b.dataset.filter === viewPrefs.filter));
+  document.querySelectorAll('.col-btn').forEach(b =>
+    b.classList.toggle('btn-primary', parseInt(b.dataset.cols, 10) === viewPrefs.cols));
+  const sortSel = document.getElementById('container-sort');
+  if (sortSel) sortSel.value = viewPrefs.sort;
+
   if (!state.containers.length) {
     grid.innerHTML = '<div class="empty-state"><div class="icon">🐳</div><div>No containers found</div></div>';
     return;
   }
 
-  grid.innerHTML = state.containers.map(c => {
-    const sel = state.selectedContainers.has(c.id);
-    const volCount = (c.volumes || []).length;
-    const badges = [
-      c.db_type ? badge(c.db_type, 'db') : '',
-      volCount ? badge(`${volCount} vol`, 'vol') : '',
-    ].filter(Boolean).join('');
+  const favs = viewPrefs.favorites;
+  const filter = viewPrefs.filter;
 
-    return `
-      <div class="container-item ${sel ? 'selected' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')">
-        <div class="container-check"></div>
-        ${statusDot(c.running)}
-        <div class="flex" style="flex:1;min-width:0;flex-direction:column">
-          <div class="container-name">${c.name}</div>
-          <div class="container-image text-muted text-sm">${c.image}</div>
-        </div>
-        <div class="container-badges">${badges}</div>
-      </div>`;
-  }).join('');
+  // Problems are always pinned on top, regardless of the active filter
+  const problems = _sortContainers(state.containers.filter(_hasProblem));
+  let rest = state.containers.filter(c => !_hasProblem(c));
 
+  if (filter === 'running') rest = rest.filter(c => c.running);
+  if (filter === 'stopped') rest = rest.filter(c => !c.running);
+  if (filter === 'favorites') rest = rest.filter(c => favs.has(c.name));
+
+  const favItems = _sortContainers(rest.filter(c => favs.has(c.name)));
+  const others   = _sortContainers(rest.filter(c => !favs.has(c.name)));
+
+  let html = _accordionGroup('problems', '⚠️ Con problemas', problems, true);
+  if (filter !== 'favorites' && favItems.length) {
+    html += _accordionGroup('favs', '⭐ Favoritos', favItems);
+    html += _accordionGroup('others', '🐳 Resto', others);
+  } else {
+    html += _accordionGroup('others', filter === 'favorites' ? '⭐ Favoritos' : '🐳 Contenedores', filter === 'favorites' ? favItems : others);
+  }
+
+  grid.innerHTML = html || '<div class="text-muted text-sm">Nada que mostrar con este filtro.</div>';
   updateSelectionInfo();
 }
 
