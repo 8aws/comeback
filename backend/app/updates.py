@@ -109,106 +109,136 @@ async def _quick_health_check(client, name: str, job: Job, wait_s: int = 8) -> b
     return False
 
 
-async def run_update(job: Job, container_id: str, backup_first: bool):
-    job.started_at = datetime.utcnow()
-    job.status = JobStatus.running
+async def _update_one(job: Job, container_id: str, backup_first: bool) -> dict:
+    """Update a single container. Raises on failure (after rollback)."""
     client = get_docker()
     loop = asyncio.get_event_loop()
 
-    try:
-        container = await loop.run_in_executor(
-            None, lambda: client.containers.get(container_id))
-        name = container.name
-        image_ref = container.attrs["Config"]["Image"]
-        old_image_id = container.attrs["Image"]   # sha256 id for rollback
+    container = await loop.run_in_executor(
+        None, lambda: client.containers.get(container_id))
+    name = container.name
+    image_ref = container.attrs["Config"]["Image"]
+    old_image_id = container.attrs["Image"]   # sha256 id for rollback
 
-        # ── Self-update: pull only ───────────────────────────────────────────
-        self_id = _self_container_id()
-        if self_id and container.id.startswith(self_id):
-            await job.set_progress(20, f"Descargando nueva imagen de {image_ref}…")
-            await _pull_with_progress(client, image_ref, job, force=True)
-            await job.log(LogLevel.warning,
-                "Comeback no puede recrearse a sí mismo. Imagen descargada — "
-                "recrea el contenedor desde compose/ZimaOS para aplicarla.")
-            await job.finish(JobStatus.success, {"pulled": image_ref, "self_update": True})
-            return
-
-        # ── Optional pre-update backup (child job) ──────────────────────────
-        if backup_first:
-            await job.set_progress(5, f"Backup previo de {name}…")
-            backup_job = job_manager.create(JobType.backup, f"Pre-update: {name}")
-            await job.log(LogLevel.info, f"Backup previo iniciado (job {backup_job.id[:8]})")
-            await run_backup(backup_job, [container_id], False, f"pre-update {name}")
-            if backup_job.status != JobStatus.success:
-                raise RuntimeError("El backup previo falló — actualización cancelada")
-            await job.log(LogLevel.success, "Backup previo completado")
-
-        # ── Pull new image ───────────────────────────────────────────────────
-        await job.set_progress(35, f"Descargando {image_ref}…")
+    # ── Self-update: pull only ───────────────────────────────────────────────
+    self_id = _self_container_id()
+    if self_id and container.id.startswith(self_id):
+        await job.log(LogLevel.info, f"Descargando nueva imagen de {image_ref}…")
         await _pull_with_progress(client, image_ref, job, force=True)
+        await job.log(LogLevel.warning,
+            "Comeback no puede recrearse a sí mismo. Imagen descargada — "
+            "recrea el contenedor desde compose/ZimaOS para aplicarla.")
+        return {"container": name, "pulled": image_ref, "self_update": True}
 
-        new_image = await loop.run_in_executor(
-            None, lambda: client.images.get(image_ref))
-        if new_image.id == old_image_id:
-            await job.log(LogLevel.success, f"{name} ya estaba en la última versión")
-            await job.finish(JobStatus.success, {"container": name, "already_current": True})
-            return
+    # ── Optional pre-update backup (child job) ───────────────────────────────
+    if backup_first:
+        backup_job = job_manager.create(JobType.backup, f"Pre-update: {name}")
+        await job.log(LogLevel.info, f"Backup previo iniciado (job {backup_job.id[:8]})")
+        await run_backup(backup_job, [container_id], False, f"pre-update {name}")
+        if backup_job.status != JobStatus.success:
+            raise RuntimeError("El backup previo falló — actualización cancelada")
+        await job.log(LogLevel.success, "Backup previo completado")
 
-        # ── Capture spec, replace container ─────────────────────────────────
-        await job.set_progress(60, f"Recreando {name}…")
-        with tempfile.TemporaryDirectory() as tmp:
-            spec = export_container_spec(container.id, Path(tmp))
+    # ── Pull new image ───────────────────────────────────────────────────────
+    await _pull_with_progress(client, image_ref, job, force=True)
 
-        was_running = container.status == "running"
-        await job.log(LogLevel.info, f"Parando y eliminando {name} (volúmenes intactos)")
-        await loop.run_in_executor(None, lambda: container.stop(timeout=10))
-        await loop.run_in_executor(None, container.remove)
+    new_image = await loop.run_in_executor(
+        None, lambda: client.images.get(image_ref))
+    if new_image.id == old_image_id:
+        await job.log(LogLevel.success, f"{name} ya estaba en la última versión")
+        return {"container": name, "already_current": True}
 
-        async def _create_and_start(image_override: str | None = None):
-            kwargs, networks = _build_run_kwargs(spec)
-            if image_override:
-                kwargs["image"] = image_override
-            new_c = await loop.run_in_executor(
-                None, lambda: client.containers.create(**kwargs))
-            for net_name in networks[1:]:
-                try:
-                    net = client.networks.get(net_name)
-                    await loop.run_in_executor(None, lambda: net.connect(new_c))
-                except Exception as e:
-                    await job.log(LogLevel.warning, f"Red {net_name}: {e}")
-            if was_running:
-                await loop.run_in_executor(None, new_c.start)
-            return new_c
+    # ── Capture spec, replace container ──────────────────────────────────────
+    with tempfile.TemporaryDirectory() as tmp:
+        spec = export_container_spec(container.id, Path(tmp))
 
-        # Any failure past this point leaves no old container — must roll back
-        crashed = False
-        try:
-            await _create_and_start()
-            await job.log(LogLevel.success, f"{name} recreado con la nueva imagen")
-            if was_running:
-                await job.set_progress(85, f"Comprobando salud de {name}…")
-                crashed = not await _quick_health_check(client, name, job)
-        except Exception as e:
-            await job.log(LogLevel.error, f"La nueva imagen falla al arrancar: {e}")
-            crashed = True
+    was_running = container.status == "running"
+    await job.log(LogLevel.info, f"Parando y eliminando {name} (volúmenes intactos)")
+    await loop.run_in_executor(None, lambda: container.stop(timeout=10))
+    await loop.run_in_executor(None, container.remove)
 
-        if crashed:
-            await job.log(LogLevel.warning,
-                          f"Rollback: restaurando imagen anterior {old_image_id[:19]}…")
+    async def _create_and_start(image_override: str | None = None):
+        kwargs, networks = _build_run_kwargs(spec)
+        if image_override:
+            kwargs["image"] = image_override
+        new_c = await loop.run_in_executor(
+            None, lambda: client.containers.create(**kwargs))
+        for net_name in networks[1:]:
             try:
-                broken = await loop.run_in_executor(
-                    None, lambda: client.containers.get(name))
-                await loop.run_in_executor(None, lambda: broken.remove(force=True))
-            except Exception:
-                pass  # may not exist if create itself failed
-            await _create_and_start(image_override=old_image_id)
-            if not was_running or await _quick_health_check(client, name, job):
-                await job.log(LogLevel.success, f"Rollback OK — {name} con la imagen anterior")
-            raise RuntimeError("La nueva imagen no arranca — rollback aplicado")
+                net = client.networks.get(net_name)
+                await loop.run_in_executor(None, lambda: net.connect(new_c))
+            except Exception as e:
+                await job.log(LogLevel.warning, f"Red {net_name}: {e}")
+        if was_running:
+            await loop.run_in_executor(None, new_c.start)
+        return new_c
 
+    # Any failure past this point leaves no old container — must roll back
+    crashed = False
+    try:
+        await _create_and_start()
+        await job.log(LogLevel.success, f"{name} recreado con la nueva imagen")
+        if was_running:
+            await job.log(LogLevel.info, f"Comprobando salud de {name}…")
+            crashed = not await _quick_health_check(client, name, job)
+    except Exception as e:
+        await job.log(LogLevel.error, f"La nueva imagen falla al arrancar: {e}")
+        crashed = True
+
+    if crashed:
+        await job.log(LogLevel.warning,
+                      f"Rollback: restaurando imagen anterior {old_image_id[:19]}…")
+        try:
+            broken = await loop.run_in_executor(
+                None, lambda: client.containers.get(name))
+            await loop.run_in_executor(None, lambda: broken.remove(force=True))
+        except Exception:
+            pass  # may not exist if create itself failed
+        await _create_and_start(image_override=old_image_id)
+        if not was_running or await _quick_health_check(client, name, job):
+            await job.log(LogLevel.success, f"Rollback OK — {name} con la imagen anterior")
+        raise RuntimeError("La nueva imagen no arranca — rollback aplicado")
+
+    return {"container": name, "image": image_ref, "updated": True}
+
+
+async def run_update(job: Job, container_id: str, backup_first: bool):
+    job.started_at = datetime.utcnow()
+    job.status = JobStatus.running
+    try:
+        await job.set_progress(10, "Actualizando…")
+        summary = await _update_one(job, container_id, backup_first)
         await job.set_progress(100, "Actualización completada")
-        await job.finish(JobStatus.success, {"container": name, "image": image_ref})
-
+        await job.finish(JobStatus.success, summary)
     except Exception as e:
         await job.log(LogLevel.error, f"Actualización fallida: {e}")
         await job.finish(JobStatus.failed, {"error": str(e)})
+
+
+async def run_update_all(job: Job, container_ids: list[str], backup_first: bool):
+    """Update several containers serially; one failure does not stop the rest."""
+    job.started_at = datetime.utcnow()
+    job.status = JobStatus.running
+    total = len(container_ids)
+    updated, failed = [], []
+
+    for idx, cid in enumerate(container_ids):
+        pct = int((idx / max(total, 1)) * 95)
+        await job.set_progress(pct, f"Actualizando {idx + 1}/{total}…")
+        await job.log(LogLevel.info, f"━━ [{idx + 1}/{total}] ━━")
+        try:
+            summary = await _update_one(job, cid, backup_first)
+            updated.append(summary.get("container", cid))
+        except Exception as e:
+            failed.append(cid)
+            await job.log(LogLevel.error, f"Fallo en {cid}: {e} — continuando con el resto")
+
+    await job.set_progress(100, "Actualización masiva completada")
+    result = {"updated": updated, "failed": failed, "total": total}
+    if failed:
+        await job.log(LogLevel.warning,
+                      f"Completado con errores: {len(updated)} OK, {len(failed)} fallidos")
+        await job.finish(JobStatus.failed if not updated else JobStatus.success, result)
+    else:
+        await job.log(LogLevel.success, f"{len(updated)} contenedor(es) actualizados")
+        await job.finish(JobStatus.success, result)

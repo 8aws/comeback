@@ -20,6 +20,7 @@ services:
       - TZ=Europe/Madrid
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=cambia-esta-contraseña
+      - INSTANCE_NAME=ZimaOS
     x-casaos:
       volumes:
         - container: /backups

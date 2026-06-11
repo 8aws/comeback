@@ -51,7 +51,7 @@ async def run_backup(job: Job, container_ids: list[str], include_images: bool, l
         "label": label,
         "created_at": datetime.utcnow().isoformat(),
         "comeback_version": "1.0.0",
-        "source_hostname": socket.gethostname(),
+        "source_hostname": settings.effective_instance_name,
         "containers": [],
         "volumes": [],
         "databases": [],

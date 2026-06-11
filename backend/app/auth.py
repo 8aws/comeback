@@ -34,7 +34,18 @@ _failures: dict[str, dict] = {}                # ip → {count, locked_until}
 
 
 def auth_enabled() -> bool:
-    return bool(settings.auth_password)
+    return bool(settings.auth_password or settings.auth_password_hash)
+
+
+def _verify_password(plain: str) -> bool:
+    """AUTH_PASSWORD_HASH (bcrypt) takes precedence over plain AUTH_PASSWORD."""
+    if settings.auth_password_hash:
+        try:
+            import bcrypt
+            return bcrypt.checkpw(plain.encode(), settings.auth_password_hash.encode())
+        except Exception:
+            return False
+    return secrets.compare_digest(plain, settings.auth_password)
 
 
 def _now() -> datetime:
@@ -114,6 +125,9 @@ def auth_status(request: Request):
     return {
         "auth_enabled": auth_enabled(),
         "authenticated": is_authenticated(request),
+        # shown on the login screen and in the header so you always know
+        # which installation you are talking to
+        "instance_name": settings.effective_instance_name,
     }
 
 
@@ -131,7 +145,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
         })
 
     user_ok = secrets.compare_digest(body.username, settings.auth_username)
-    pass_ok = secrets.compare_digest(body.password, settings.auth_password)
+    pass_ok = _verify_password(body.password)
     if not (user_ok and pass_ok):
         await asyncio.sleep(FAIL_DELAY_SECONDS)
         count, attempts_left = _register_failure(ip)

@@ -17,7 +17,7 @@ function navigate(tab) {
   state.tab = tab;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
-  if (tab === 'backup') loadContainers();
+  if (tab === 'backup') { loadContainers(); loadSchedules(); }
   if (tab === 'restore') { loadBackups(); loadTestResources(); }
   if (tab === 'jobs') loadJobs();
   if (tab === 'deploy') loadTemplates();
@@ -271,6 +271,7 @@ function updateSelectionInfo() {
   const n = state.selectedContainers.size;
   document.getElementById('selection-count').textContent = n ? `${n} selected` : '';
   document.getElementById('btn-start-backup').disabled = n === 0;
+  document.getElementById('btn-schedule-backup').disabled = n === 0;
 }
 
 async function startBackup() {
@@ -291,6 +292,95 @@ async function startBackup() {
   } catch (e) {
     showToast(`Backup error: ${e.message}`, 'error');
   }
+}
+
+// ─── SCHEDULED BACKUPS ────────────────────────────────────────────────────────
+function openScheduleForm() {
+  if (!state.selectedContainers.size) return;
+  document.getElementById('schedule-form').style.display = 'block';
+  document.getElementById('sched-name').focus();
+}
+
+async function createSchedule() {
+  const name = document.getElementById('sched-name').value.trim();
+  if (!name) { showToast('Pon un nombre a la programación', 'warning'); return; }
+  if (!state.selectedContainers.size) { showToast('Selecciona contenedores primero', 'warning'); return; }
+  try {
+    await API.schedules.create({
+      name,
+      container_ids: [...state.selectedContainers],
+      frequency: document.getElementById('sched-frequency').value,
+      time: document.getElementById('sched-time').value || '03:00',
+      weekday: parseInt(document.getElementById('sched-weekday').value, 10),
+      retention: parseInt(document.getElementById('sched-retention').value, 10) || 7,
+      include_images: document.getElementById('opt-images').checked,
+    });
+    document.getElementById('schedule-form').style.display = 'none';
+    document.getElementById('sched-name').value = '';
+    showToast(`Programación "${name}" creada`, 'success');
+    loadSchedules();
+  } catch (e) {
+    showToast(`Error creando programación: ${e.message}`, 'error');
+  }
+}
+
+const WEEKDAY_NAMES = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+async function loadSchedules() {
+  const list = document.getElementById('schedules-list');
+  try {
+    const schedules = await API.schedules.list();
+    if (!schedules.length) {
+      list.innerHTML = '<div class="text-muted text-sm">Sin programaciones. Selecciona contenedores y pulsa ⏰ Programar.</div>';
+      return;
+    }
+    list.innerHTML = schedules.map(s => {
+      const freq = s.frequency === 'weekly'
+        ? `semanal (${WEEKDAY_NAMES[s.weekday]} ${s.time})`
+        : `diaria (${s.time})`;
+      return `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;opacity:${s.enabled ? 1 : 0.5}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <strong>⏰ ${escapeHtml(s.name)}</strong>
+          <div class="flex gap-2">
+            <button class="btn btn-outline btn-sm" title="Ejecutar ahora" onclick="runScheduleNow('${s.id}', '${escapeHtml(s.name)}')">▶</button>
+            <button class="btn btn-outline btn-sm" title="${s.enabled ? 'Pausar' : 'Activar'}" onclick="toggleSchedule('${s.id}', ${!s.enabled})">${s.enabled ? '⏸' : '▶️'}</button>
+            <button class="btn btn-outline btn-sm" title="Eliminar" style="color:var(--red,#f85149)" onclick="deleteSchedule('${s.id}', '${escapeHtml(s.name)}')">🗑</button>
+          </div>
+        </div>
+        <div class="text-muted text-sm" style="margin-top:4px">
+          ${freq} · ${s.container_ids.length} contenedor(es) · retención ${s.retention}<br>
+          Próxima: ${fmt(s.next_run)}${s.last_run ? ` · Última: ${fmt(s.last_run)}` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="alert error">Error cargando programaciones: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function toggleSchedule(id, enabled) {
+  try {
+    await API.schedules.update(id, { enabled });
+    loadSchedules();
+  } catch (e) { showToast(`Error: ${e.message}`, 'error'); }
+}
+
+async function deleteSchedule(id, name) {
+  if (!confirm(`¿Eliminar la programación "${name}"? Los backups ya creados no se borran.`)) return;
+  try {
+    await API.schedules.delete(id);
+    showToast(`Programación "${name}" eliminada`, 'success');
+    loadSchedules();
+  } catch (e) { showToast(`Error: ${e.message}`, 'error'); }
+}
+
+async function runScheduleNow(id, name) {
+  try {
+    const { job_id } = await API.schedules.run(id);
+    openJobModal(job_id, `⏰ ${name} (manual)`);
+    window._scheduleJobPoll?.();
+  } catch (e) { showToast(`Error: ${e.message}`, 'error'); }
 }
 
 // ─── RESTORE TAB ──────────────────────────────────────────────────────────────
@@ -776,7 +866,14 @@ async function loadUpdates() {
       list.innerHTML = '<div class="text-muted text-sm">No hay contenedores.</div>';
       return;
     }
-    list.innerHTML = items.map(u => {
+    const updatable = items.filter(u => u.status === 'update' && !u.is_self);
+    const bulkBtn = updatable.length > 1 ? `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-primary" onclick="startUpdateAll(${JSON.stringify(updatable.map(u => u.id)).replace(/"/g, '&quot;')})">
+          ⬆️ Actualizar todos (${updatable.length})
+        </button>
+      </div>` : '';
+    list.innerHTML = bulkBtn + items.map(u => {
       const st = UPDATE_STATUS[u.status] || UPDATE_STATUS.unknown;
       let action = '';
       if (u.status === 'update') {
@@ -802,6 +899,18 @@ async function loadUpdates() {
     }).join('');
   } catch (e) {
     list.innerHTML = `<div class="alert error">Error comprobando actualizaciones: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function startUpdateAll(containerIds) {
+  const backupFirst = document.getElementById('update-backup-first').checked;
+  if (!confirm(`¿Actualizar ${containerIds.length} contenedores en serie?${backupFirst ? '\nSe hará backup previo de cada uno.' : '\n⚠️ SIN backups previos.'}`)) return;
+  try {
+    const { job_id } = await API.updates.startAll({ container_ids: containerIds, backup_first: backupFirst });
+    openJobModal(job_id, `Update masivo — ${containerIds.length} contenedores`);
+    window._scheduleJobPoll?.();
+  } catch (e) {
+    showToast(`Update error: ${e.message}`, 'error');
   }
 }
 
@@ -871,10 +980,20 @@ function hideLogin() {
   document.getElementById('login-overlay').style.display = 'none';
 }
 
+function _applyInstanceName(name) {
+  if (!name) return;
+  const sub = document.querySelector('.logo-sub');
+  if (sub) sub.textContent = name;
+  document.title = `${name} — uverse comeback`;
+  const loginSub = document.getElementById('login-instance');
+  if (loginSub) { loginSub.textContent = name; loginSub.style.display = 'block'; }
+}
+
 async function initAuth() {
   try {
     const r = await fetch('/api/auth/status');
     const s = await r.json();
+    _applyInstanceName(s.instance_name);
     if (s.auth_enabled && !s.authenticated) {
       showLogin();
       return false;

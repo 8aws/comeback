@@ -10,7 +10,6 @@ async def restore_docker_volume(volume_name: str, archive: Path, job) -> bool:
     await job.log(LogLevel.info, f"Restoring volume: {volume_name}")
 
     loop = asyncio.get_event_loop()
-    archive_bytes = archive.read_bytes()
 
     def _run():
         import docker
@@ -38,17 +37,20 @@ async def restore_docker_volume(volume_name: str, archive: Path, job) -> bool:
         cid = container["Id"]
         api.start(cid)
 
-        # Pipe archive bytes to container stdin
+        # Stream the archive from disk to container stdin in chunks —
+        # never load the whole file into memory (multi-GB volumes)
         sock = api.attach_socket(cid, params={"stdin": 1, "stream": 1})
         raw = sock._sock
-        chunk_size = 65536
-        for i in range(0, len(archive_bytes), chunk_size):
-            raw.sendall(archive_bytes[i:i + chunk_size])
+        with open(archive, "rb") as f:
+            while chunk := f.read(65536):
+                raw.sendall(chunk)
         raw.shutdown(_socket.SHUT_WR)
         raw.close()
 
-        api.wait(cid)
+        result = api.wait(cid)
         api.remove_container(cid, force=True)
+        if result.get("StatusCode", 1) != 0:
+            raise RuntimeError(f"tar exited with code {result.get('StatusCode')}")
 
     try:
         await loop.run_in_executor(None, _run)

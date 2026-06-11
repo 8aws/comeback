@@ -88,10 +88,26 @@ class EntePhotosTemplate(BaseTemplate):
         ),
         TemplateField(
             key="data_path",
-            label="Ruta de datos en el host",
+            label="Ruta de datos (SSD/rápida)",
             type="path",
             default="/share/Container/ente/data",
-            hint="Directorio raíz donde se guardarán postgres y minio",
+            hint="PostgreSQL y configuración de museum — mejor en SSD",
+            required=False,
+        ),
+        TemplateField(
+            key="data_path_hdd",
+            label="Ruta de fotos (HDD/grande)",
+            type="path",
+            default="",
+            hint="Almacén MinIO de las fotos — vacío = misma ruta de datos. Útil en NAS híbridos SSD+HDD",
+            required=False,
+        ),
+        TemplateField(
+            key="tz",
+            label="Zona horaria",
+            type="text",
+            default="Europe/Madrid",
+            hint="TZ de todos los contenedores (formato IANA)",
             required=False,
         ),
     ]
@@ -162,9 +178,10 @@ class EntePhotosTemplate(BaseTemplate):
             return True
         return False
 
-    def _ensure_dirs(self, base: str):
-        for sub in ("postgres", "minio", "museum"):
-            p = Path(f"/host{base}/{sub}")
+    def _ensure_dirs(self, base_ssd: str, base_hdd: str):
+        targets = [f"{base_ssd}/postgres", f"{base_ssd}/museum", f"{base_hdd}/minio"]
+        for target in targets:
+            p = Path(f"/host{target}")
             if p.exists() and not p.is_dir():
                 p.unlink()          # elimina si es fichero en vez de directorio
             p.mkdir(parents=True, exist_ok=True)
@@ -238,7 +255,7 @@ class EntePhotosTemplate(BaseTemplate):
 
     # ─── deploy steps ─────────────────────────────────────────────────────
 
-    def _start_postgres(self, pg_pass: str, data_path: str):
+    def _start_postgres(self, pg_pass: str, data_path: str, tz: str):
         client = get_docker()
         self._remove_if_exists("ente-postgres")
         client.containers.run(
@@ -251,7 +268,7 @@ class EntePhotosTemplate(BaseTemplate):
                 "POSTGRES_USER": "ente",
                 "POSTGRES_PASSWORD": pg_pass,
                 "POSTGRES_DB": "ente",
-                "TZ": "Europe/Madrid",
+                "TZ": tz,
             },
             volumes=[f"{data_path}/postgres:/var/lib/postgresql/data"],
             labels={
@@ -260,7 +277,7 @@ class EntePhotosTemplate(BaseTemplate):
             },
         )
 
-    def _start_minio(self, minio_pass: str, data_path: str):
+    def _start_minio(self, minio_pass: str, data_path_hdd: str, tz: str):
         client = get_docker()
         self._remove_if_exists("ente-minio")
         client.containers.run(
@@ -273,9 +290,9 @@ class EntePhotosTemplate(BaseTemplate):
             environment={
                 "MINIO_ROOT_USER": "ente",
                 "MINIO_ROOT_PASSWORD": minio_pass,
-                "TZ": "Europe/Madrid",
+                "TZ": tz,
             },
-            volumes=[f"{data_path}/minio:/data"],
+            volumes=[f"{data_path_hdd}/minio:/data"],
             # No host port bindings — Cosmos Cloud accede por red interna
             labels={
                 "com.uverse.template": "ente-photos",
@@ -347,7 +364,7 @@ s3:
         config_path.write_text(yaml_content)
         return f"{data_path}/museum/credentials.yaml"
 
-    def _start_museum(self, cfg: dict, data_path: str):
+    def _start_museum(self, cfg: dict, data_path: str, tz: str):
         client = get_docker()
         self._remove_if_exists("ente-museum")
         client.containers.run(
@@ -356,6 +373,7 @@ s3:
             detach=True,
             restart_policy={"Name": "unless-stopped"},
             network=NETWORK,
+            environment={"TZ": tz},
             volumes=[
                 # /museum es el binario dentro de la imagen — montamos el fichero directamente en /
                 f"{data_path}/museum/credentials.yaml:/credentials.yaml:ro",
@@ -367,7 +385,7 @@ s3:
             },
         )
 
-    def _start_web(self, api_domain: str, web_domain: str):
+    def _start_web(self, api_domain: str, web_domain: str, tz: str):
         client = get_docker()
         self._remove_if_exists("ente-web")
         client.containers.run(
@@ -378,7 +396,7 @@ s3:
             network=NETWORK,
             environment={
                 "NEXT_PUBLIC_ENTE_ENDPOINT": f"https://{api_domain}",
-                "TZ": "Europe/Madrid",
+                "TZ": tz,
             },
             # No host port — Cosmos apunta a ente-web:3000 por red interna
             labels={
@@ -416,7 +434,10 @@ s3:
         minio_pass = config["minio_password"]
         api_domain = config["api_domain"]
         web_domain = config.get("web_domain", "")
-        data_path  = config.get("data_path", "/share/Container/ente/data").rstrip("/")
+        data_path  = (config.get("data_path") or "/share/Container/ente/data").rstrip("/")
+        # MinIO (las fotos) puede ir a un HDD distinto; vacío = misma ruta
+        data_path_hdd = (config.get("data_path_hdd") or data_path).rstrip("/")
+        tz = config.get("tz") or "Europe/Madrid"
 
         loop = asyncio.get_event_loop()
 
@@ -434,8 +455,11 @@ s3:
 
             # 2 — Directories
             await job.set_progress(8, "Creando directorios…")
-            await job.log(LogLevel.info, f"Directorios en {data_path}")
-            await loop.run_in_executor(None, self._ensure_dirs, data_path)
+            if data_path_hdd != data_path:
+                await job.log(LogLevel.info, f"Datos en {data_path} · Fotos (MinIO) en {data_path_hdd}")
+            else:
+                await job.log(LogLevel.info, f"Directorios en {data_path}")
+            await loop.run_in_executor(None, self._ensure_dirs, data_path, data_path_hdd)
             await job.log(LogLevel.success, "Directorios listos")
 
             # 3 — Pull images (parallelised) with heartbeat
@@ -451,7 +475,7 @@ s3:
             # 4 — PostgreSQL
             await job.set_progress(40, "Iniciando PostgreSQL…")
             await job.log(LogLevel.info, "Arrancando ente-postgres")
-            await loop.run_in_executor(None, self._start_postgres, pg_pass, data_path)
+            await loop.run_in_executor(None, self._start_postgres, pg_pass, data_path, tz)
             _containers_started.append("ente-postgres")
             await job.log(LogLevel.info, f"  ente-postgres creado — iniciando health check")
             await self._wait_healthy_async(
@@ -463,7 +487,7 @@ s3:
             # 5 — MinIO
             await job.set_progress(52, "Iniciando MinIO…")
             await job.log(LogLevel.info, "Arrancando ente-minio")
-            await loop.run_in_executor(None, self._start_minio, minio_pass, data_path)
+            await loop.run_in_executor(None, self._start_minio, minio_pass, data_path_hdd, tz)
             _containers_started.append("ente-minio")
             await job.log(LogLevel.info, f"  ente-minio creado — iniciando health check")
             await self._wait_healthy_async(
@@ -487,7 +511,7 @@ s3:
             # 8 — Museum
             await job.set_progress(72, "Iniciando museum (API server)…")
             await job.log(LogLevel.info, "Arrancando ente-museum")
-            await loop.run_in_executor(None, self._start_museum, config, data_path)
+            await loop.run_in_executor(None, self._start_museum, config, data_path, tz)
             _containers_started.append("ente-museum")
             await job.log(LogLevel.info, f"  ente-museum creado — iniciando health check")
             await self._wait_healthy_async(
@@ -499,7 +523,7 @@ s3:
             # 9 — Web
             await job.set_progress(88, "Iniciando frontend web…")
             await job.log(LogLevel.info, "Arrancando ente-web")
-            await loop.run_in_executor(None, self._start_web, api_domain, web_domain)
+            await loop.run_in_executor(None, self._start_web, api_domain, web_domain, tz)
             _containers_started.append("ente-web")
 
             # Done

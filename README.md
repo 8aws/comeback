@@ -8,7 +8,8 @@ Herramienta self-hosted de **backup, restauración y despliegue de contenedores 
 - **Restauración con un clic**: recrea redes, volúmenes y contenedores con su configuración original. Modo test con prefijo de nombre para restaurar en paralelo sin tocar el original.
 - **Migraciones entre servidores**: descarga un backup, súbelo en otra instancia de comeback y restaura reasignando las rutas de bind mounts que difieran entre máquinas (p. ej. `/share/Container` de QNAP → `/DATA/AppData` de ZimaOS).
 - **Despliegue de stacks**: plantillas integradas (Ente Photos…), YAML de Docker Compose o Dockerfile inline, con progreso en tiempo real, rollback automático en caso de error y backup automático tras cada deploy exitoso.
-- **Actualizaciones de contenedores**: detecta imágenes nuevas en el registry (estilo Watchtower) y actualiza con un clic — backup previo opcional, recreación con la configuración original y rollback automático si la nueva versión no arranca.
+- **Backups programados**: programaciones diarias o semanales por grupo de contenedores, con retención automática (mantener las N copias más recientes) y ejecución manual bajo demanda.
+- **Actualizaciones de contenedores**: detecta imágenes nuevas en el registry (estilo Watchtower) y actualiza con un clic o en masa — backup previo opcional, recreación con la configuración original y rollback automático si la nueva versión no arranca.
 - **Verificación de archivos**: comprueba integridad (checksum + manifest) sin restaurar.
 - **Sin docker CLI**: todas las operaciones usan el SDK de Python sobre el socket de Docker.
 - **Logs en tiempo real**: WebSocket con fallback a polling, compatible con proxies HTTPS.
@@ -79,7 +80,9 @@ Abre `http://tu-servidor:7731`. La documentación de la API está en `/api/docs`
 | `HOST_ROOT` | `/host` | Punto de montaje del filesystem del host |
 | `TZ` | `Europe/Madrid` | Zona horaria de los logs |
 | `AUTH_USERNAME` | `admin` | Usuario del login web |
-| `AUTH_PASSWORD` | *(vacía)* | Contraseña del login. **Si está vacía, la API queda abierta sin autenticación** |
+| `AUTH_PASSWORD` | *(vacía)* | Contraseña del login. **Si está vacía (y no hay hash), la API queda abierta sin autenticación** |
+| `AUTH_PASSWORD_HASH` | *(vacía)* | Hash bcrypt de la contraseña — tiene prioridad sobre `AUTH_PASSWORD` y evita que viva en claro en el compose |
+| `INSTANCE_NAME` | *(hostname del host)* | Nombre de esta instalación, visible en el login, la cabecera y los manifests de backup |
 
 ## 🔐 Autenticación
 
@@ -89,6 +92,13 @@ Define `AUTH_PASSWORD` para activar el login (sesión de 24 h por cookie). Inclu
     environment:
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=una-contraseña-fuerte
+```
+
+Para no dejar la contraseña en claro, genera un hash bcrypt y usa `AUTH_PASSWORD_HASH` en su lugar:
+
+```bash
+docker run --rm python:3.12-slim sh -c \
+  "pip install -q bcrypt && python -c \"import bcrypt; print(bcrypt.hashpw(b'tu-contraseña', bcrypt.gensalt()).decode())\""
 ```
 
 ## ⚠️ Seguridad

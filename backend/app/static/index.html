@@ -100,9 +100,62 @@
 
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
             <span id="selection-count" class="text-muted text-sm"></span>
-            <button id="btn-start-backup" class="btn btn-primary" onclick="startBackup()" disabled>
-              📦 Start Backup
-            </button>
+            <div class="flex gap-2">
+              <button id="btn-schedule-backup" class="btn btn-outline" onclick="openScheduleForm()" disabled>⏰ Programar</button>
+              <button id="btn-start-backup" class="btn btn-primary" onclick="startBackup()" disabled>
+                📦 Start Backup
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>⏰ Backups programados</h2>
+              <button class="btn btn-outline btn-sm" onclick="loadSchedules()">↻</button>
+            </div>
+            <div class="card-body">
+              <div id="schedule-form" style="display:none;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+                <div class="form-group">
+                  <label class="form-label">Nombre</label>
+                  <input id="sched-name" type="text" placeholder="ej. nightly-apps"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:13px">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  <div class="form-group">
+                    <label class="form-label">Frecuencia</label>
+                    <select id="sched-frequency" onchange="document.getElementById('sched-weekday-wrap').style.display = this.value === 'weekly' ? 'block' : 'none'"
+                      style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:13px">
+                      <option value="daily">Diaria</option>
+                      <option value="weekly">Semanal</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Hora</label>
+                    <input id="sched-time" type="time" value="03:00"
+                      style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:13px">
+                  </div>
+                </div>
+                <div class="form-group" id="sched-weekday-wrap" style="display:none">
+                  <label class="form-label">Día de la semana</label>
+                  <select id="sched-weekday"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:13px">
+                    <option value="0">Lunes</option><option value="1">Martes</option><option value="2">Miércoles</option>
+                    <option value="3">Jueves</option><option value="4">Viernes</option><option value="5">Sábado</option>
+                    <option value="6" selected>Domingo</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Retención (copias a mantener)</label>
+                  <input id="sched-retention" type="number" min="1" max="365" value="7"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:13px">
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px">
+                  <button class="btn btn-outline btn-sm" onclick="document.getElementById('schedule-form').style.display='none'">Cancelar</button>
+                  <button class="btn btn-primary btn-sm" onclick="createSchedule()">✓ Crear</button>
+                </div>
+              </div>
+              <div id="schedules-list"><div class="text-muted text-sm">Sin programaciones</div></div>
+            </div>
           </div>
         </div>
       </div>
@@ -426,6 +479,7 @@
   ">
     <div style="text-align:center; font-size:36px;">🔄</div>
     <div style="text-align:center; font-weight:700; font-size:18px;">uverse <strong>comeback</strong></div>
+    <div id="login-instance" style="display:none; text-align:center; color:var(--blue, #58a6ff); font-size:13px; font-weight:600;"></div>
     <input id="login-user" type="text" placeholder="Usuario" autocomplete="username" required
            style="padding:10px 12px; border-radius:8px; border:1px solid var(--border, #30363d); background:var(--bg, #0d1117); color:inherit;">
     <input id="login-pass" type="password" placeholder="Contraseña" autocomplete="current-password" required

@@ -6,25 +6,46 @@ from ..models import LogLevel
 
 
 async def backup_docker_volume(volume_name: str, dest_dir: Path, job) -> dict:
-    """Run alpine via SDK, pipe tar to stdout, write locally. No docker CLI needed."""
+    """Tar the volume via an alpine helper, streaming stdout to disk in chunks.
+
+    The stream never lives fully in memory, so multi-GB volumes are safe.
+    No docker CLI needed — uses the low-level APIClient attach stream.
+    """
     archive = dest_dir / f"{volume_name}.tar.gz"
     await job.log(LogLevel.info, f"Backing up volume: {volume_name}")
 
     loop = asyncio.get_event_loop()
 
-    def _run():
+    def _run() -> int:
         import docker
-        client = docker.from_env()
-        return client.containers.run(
-            "alpine",
-            ["tar", "czf", "-", "-C", "/data", "."],
-            volumes={volume_name: {"bind": "/data", "mode": "ro"}},
-            remove=True,
-        )
+        api = docker.APIClient(base_url="unix://var/run/docker.sock")
 
-    output = await loop.run_in_executor(None, _run)
-    archive.write_bytes(output)
-    size = archive.stat().st_size
+        host_config = api.create_host_config(
+            binds={volume_name: {"bind": "/data", "mode": "ro"}}
+        )
+        container = api.create_container(
+            image="alpine",
+            command=["tar", "czf", "-", "-C", "/data", "."],
+            host_config=host_config,
+        )
+        cid = container["Id"]
+        try:
+            # Attach before start so no early output is missed
+            stream = api.attach(cid, stdout=True, stderr=False, stream=True, logs=True)
+            api.start(cid)
+            written = 0
+            with open(archive, "wb") as f:
+                for chunk in stream:
+                    f.write(chunk)
+                    written += len(chunk)
+            result = api.wait(cid)
+            if result.get("StatusCode", 1) != 0:
+                raise RuntimeError(f"tar exited with code {result.get('StatusCode')}")
+            return written
+        finally:
+            api.remove_container(cid, force=True)
+
+    size = await loop.run_in_executor(None, _run)
     await job.log(LogLevel.success, f"Volume {volume_name} backed up ({size // 1024} KB)")
     return {"name": volume_name, "type": "docker", "archive": archive.name, "size": size}
 

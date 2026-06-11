@@ -6,7 +6,10 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from . import auth
-from .api import containers, backup, restore, jobs, cleanup, deploy, updates
+import asyncio
+
+from .api import containers, backup, restore, jobs, cleanup, deploy, schedules, updates
+from .scheduler import scheduler_loop
 
 logger = logging.getLogger("comeback")
 
@@ -23,12 +26,13 @@ async def require_auth(request: Request, call_next):
 
 
 @app.on_event("startup")
-async def warn_if_open():
+async def on_startup():
     if not auth.auth_enabled():
         logger.warning(
             "AUTH_PASSWORD is not set — the API is OPEN without authentication. "
             "Set AUTH_PASSWORD (and optionally AUTH_USERNAME) to enable login."
         )
+    asyncio.create_task(scheduler_loop())
 
 
 app.include_router(auth.router)
@@ -39,6 +43,7 @@ app.include_router(jobs.router)
 app.include_router(cleanup.router)
 app.include_router(deploy.router)
 app.include_router(updates.router)
+app.include_router(schedules.router)
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

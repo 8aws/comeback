@@ -17,6 +17,15 @@ const API = {
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
+  async put(url, body) {
+    const r = API._check(await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
   async del(url) {
     const r = API._check(await fetch(url, { method: 'DELETE' }));
     if (!r.ok) throw new Error(await r.text());
@@ -45,6 +54,14 @@ const API = {
   updates: {
     list: () => API.get('/api/updates'),
     start: (body) => API.post('/api/updates/start', body),
+    startAll: (body) => API.post('/api/updates/start-all', body),
+  },
+  schedules: {
+    list: () => API.get('/api/schedules'),
+    create: (body) => API.post('/api/schedules', body),
+    update: (id, body) => API.put(`/api/schedules/${id}`, body),
+    delete: (id) => API.del(`/api/schedules/${id}`),
+    run: (id) => API.post(`/api/schedules/${id}/run`, {}),
   },
   cleanup: {
     list: () => API.get('/api/cleanup/test'),

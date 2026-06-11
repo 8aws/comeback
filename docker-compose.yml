@@ -17,6 +17,7 @@ services:
       - TZ=Europe/Madrid
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=${COMEBACK_PASSWORD:?Define COMEBACK_PASSWORD en .env}
+      - INSTANCE_NAME=${COMEBACK_INSTANCE:-}   # ej. "QNAP-casa" — vacío = hostname del host
     labels:
       - "com.uverse.service=comeback"
 
