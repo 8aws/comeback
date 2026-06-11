@@ -10,6 +10,7 @@ const state = {
   backups: [],
   jobs: [],
   activeJobId: null,
+  cardStats: {},     // id → {cpu_pct, mem_usage, mem_pct, net_rx, net_tx} for main-page cards
 };
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -224,6 +225,13 @@ async function loadContainers() {
       });
       if (changed && state.tab === 'backup') renderContainers();
     }).catch(() => {});
+    // Phase 3: live CPU/RAM/net metrics for the cards (background, best-effort)
+    if (monitoringEnabled()) {
+      API.stats.list().then(stats => {
+        state.cardStats = Object.fromEntries(stats.filter(s => !s.error).map(s => [s.id, s]));
+        if (state.tab === 'backup') renderContainers();
+      }).catch(() => {});
+    }
   } catch (e) {
     grid.innerHTML = `<div class="alert error">Failed to load containers: ${e.message}</div>`;
   }
@@ -239,6 +247,8 @@ const viewPrefs = {
   set cols(v)     { localStorage.setItem('cb_cols', v); },
   get favorites() { try { return new Set(JSON.parse(localStorage.getItem('cb_favs') || '[]')); } catch (e) { return new Set(); } },
   set favorites(s){ localStorage.setItem('cb_favs', JSON.stringify([...s])); },
+  get verified()  { try { return new Set(JSON.parse(localStorage.getItem('cb_verified') || '[]')); } catch (e) { return new Set(); } },
+  set verified(s) { localStorage.setItem('cb_verified', JSON.stringify([...s])); },
   isCollapsed(g)  { return localStorage.getItem(`cb_acc_${g}`) === '1'; },
   setCollapsed(g, v) { localStorage.setItem(`cb_acc_${g}`, v ? '1' : '0'); },
 };
@@ -256,12 +266,31 @@ function toggleFavorite(ev, name) {
   renderContainers();
 }
 
+// Exit codes from a voluntary docker stop/kill — not a crash:
+// 0 = clean exit, 130 = SIGINT, 137 = SIGKILL (stop timeout), 143 = SIGTERM
+const VOLUNTARY_EXIT_CODES = new Set([0, 130, 137, 143]);
+
 function _hasProblem(c) {
-  // unhealthy, crashed (exit != 0), restarting or dead — always pinned on top
+  // unhealthy, crashed (unexpected exit code), restarting or dead
+  const verified = viewPrefs.verified;
+  if (verified.has(c.name)) return false;   // user vouched for it — treat as normal
   return c.health === 'unhealthy'
-    || (c.status === 'exited' && c.exit_code !== 0 && c.exit_code != null)
+    || (c.status === 'exited' && c.exit_code != null && !VOLUNTARY_EXIT_CODES.has(c.exit_code))
     || c.status === 'restarting'
     || c.status === 'dead';
+}
+
+function _isVerifiedProblem(c) {
+  // would be a problem, but the user marked it verified
+  return viewPrefs.verified.has(c.name);
+}
+
+function toggleVerified(ev, name) {
+  ev.stopPropagation();
+  const v = viewPrefs.verified;
+  v.has(name) ? v.delete(name) : v.add(name);
+  viewPrefs.verified = v;
+  renderContainers();
 }
 
 function _sortContainers(list) {
@@ -278,12 +307,48 @@ function _containerItem(c) {
   const favs = viewPrefs.favorites;
   const volCount = (c.volumes || []).length;
   const problem = _hasProblem(c);
+  const verifiedProblem = _isVerifiedProblem(c);
+  const compact = viewPrefs.cols >= 4;
+  const liveStats = state.cardStats?.[c.id];
+
   const badges = [
     problem ? badge(c.health === 'unhealthy' ? 'unhealthy' : `exit ${c.exit_code ?? '?'}`, 'db') : '',
+    verifiedProblem ? `<span class="badge" onclick="toggleVerified(event, '${escapeHtml(c.name)}')" title="${t('Click para quitar el verificado')}" style="cursor:pointer">✔ ${t('verificado')}</span>` : '',
     c.db_type ? badge(c.db_type, 'db') : '',
     volCount ? badge(`${volCount} vol`, 'vol') : '',
     c.size_human ? badge(c.size_human, '') : '',
   ].filter(Boolean).join('');
+
+  const verifyBtn = problem
+    ? `<span onclick="toggleVerified(event, '${escapeHtml(c.name)}')" title="${t('Marcar como verificado — se gestiona como contenedor normal')}"
+        style="cursor:pointer;font-size:13px;opacity:0.6;flex-shrink:0">✔</span>`
+    : '';
+
+  const statsHtml = liveStats && c.running ? `
+    <div class="card-stats text-muted" style="font-size:10.5px;display:flex;gap:10px;margin-top:2px">
+      <span>CPU ${liveStats.cpu_pct}%</span>
+      <span>RAM ${_fmtBytes(liveStats.mem_usage)} (${liveStats.mem_pct}%)</span>
+      <span>↓${_fmtBytes(liveStats.net_rx)} ↑${_fmtBytes(liveStats.net_tx)}</span>
+    </div>` : '';
+
+  // 4 columns: stack everything vertically so text never overlaps
+  if (compact) {
+    return `
+    <div class="container-item compact ${sel ? 'selected' : ''} ${problem ? 'problem' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')"
+         style="flex-direction:column;align-items:stretch;gap:5px">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <div class="container-check"></div>
+        ${statusDot(c.running)}
+        <div class="container-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name)}</div>
+        ${verifyBtn}
+        <span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="${t('Favorito')}"
+          style="cursor:pointer;font-size:13px;opacity:${favs.has(c.name) ? 1 : 0.25};flex-shrink:0">⭐</span>
+      </div>
+      <div class="container-image text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.image)}</div>
+      ${badges ? `<div class="container-badges" style="display:flex;flex-wrap:wrap;gap:4px">${badges}</div>` : ''}
+      ${statsHtml}
+    </div>`;
+  }
 
   return `
     <div class="container-item ${sel ? 'selected' : ''} ${problem ? 'problem' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')">
@@ -292,9 +357,11 @@ function _containerItem(c) {
       <div class="flex" style="flex:1;min-width:0;flex-direction:column">
         <div class="container-name">${escapeHtml(c.name)}</div>
         <div class="container-image text-muted text-sm">${escapeHtml(c.image)}</div>
+        ${statsHtml}
       </div>
       <div class="container-badges">${badges}</div>
-      <span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="Favorito"
+      ${verifyBtn}
+      <span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="${t('Favorito')}"
         style="cursor:pointer;font-size:15px;opacity:${favs.has(c.name) ? 1 : 0.25};flex-shrink:0">⭐</span>
     </div>`;
 }
@@ -509,42 +576,78 @@ async function loadBackups() {
   }
 }
 
-function renderBackups() {
-  const list = document.getElementById('backup-list');
-  if (!state.backups.length) {
-    list.innerHTML = '<div class="empty-state"><div class="icon">📦</div><div>No backups found</div><div class="text-sm text-muted mt-2">Create a backup from the Backup tab</div></div>';
-    return;
-  }
-
-  list.innerHTML = state.backups.map(b => `
+function _backupItem(b) {
+  return `
     <div class="backup-item">
       <div class="backup-item-header">
         <span style="font-size:20px">📦</span>
         <div style="flex:1;min-width:0">
-          <div class="backup-name">${b.label || b.name}</div>
-          <div class="text-sm text-muted">${b.name}</div>
+          <div class="backup-name">${escapeHtml(b.label || b.name)}</div>
+          <div class="text-sm text-muted">${escapeHtml(b.name)}</div>
         </div>
         <div class="backup-actions">
-          <button class="btn btn-outline btn-sm" onclick="verifyBackup('${b.name}')">✅ Verify</button>
+          <button class="btn btn-outline btn-sm" onclick="verifyBackup('${b.name}')">✅ ${t('Verify')}</button>
           <button class="btn btn-outline btn-sm" style="color:var(--yellow);border-color:var(--yellow)" onclick="openRestoreModal('${b.name}','test-')">🧪 Test</button>
           <button class="btn btn-blue btn-sm" onclick="openRestoreModal('${b.name}')">🔄 Restore</button>
-          <a class="btn btn-outline btn-sm" href="/api/backups/${b.name}/download">⬇ Download</a>
+          <a class="btn btn-outline btn-sm" href="/api/backups/${b.name}/download">⬇ ${t('Download')}</a>
           <button class="btn btn-danger btn-sm" onclick="deleteBackup('${b.name}')">🗑</button>
         </div>
       </div>
       <div class="backup-meta">
         <span>📅 ${fmt(b.created_at)}</span>
-        <span>🖥 ${b.source_hostname}</span>
+        <span>🖥 ${escapeHtml(b.source_hostname)}</span>
         <span>📦 ${b.size_human}</span>
-        <span>🐳 ${b.container_count} containers</span>
-        <span>💾 ${b.volume_count} volumes</span>
-        <span>🗄 ${b.db_count} databases</span>
+        <span>🐳 ${b.container_count} ${t('contenedores')}</span>
+        <span>💾 ${b.volume_count} ${t('volúmenes')}</span>
+        <span>🗄 ${b.db_count} ${t('bases de datos')}</span>
       </div>
       ${b.containers?.length ? `
       <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-        ${b.containers.map(c => `<span class="badge">${c.name}</span>`).join('')}
+        ${b.containers.map(c => `<span class="badge">${escapeHtml(c.name)}</span>`).join('')}
       </div>` : ''}
-    </div>`).join('');
+    </div>`;
+}
+
+function toggleBackupGroup(key) {
+  viewPrefs.setCollapsed(`bk_${key}`, !viewPrefs.isCollapsed(`bk_${key}`));
+  renderBackups();
+}
+
+function renderBackups() {
+  const list = document.getElementById('backup-list');
+  if (!state.backups.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">📦</div><div>${t('No hay backups')}</div><div class="text-sm text-muted mt-2">${t('Crea un backup desde la pestaña Backup')}</div></div>`;
+    return;
+  }
+
+  // Scheduled backups (label starts with ⏰) go into collapsed groups per
+  // schedule so periodic runs don't flood the page
+  const manual = state.backups.filter(b => !(b.label || '').startsWith('⏰'));
+  const scheduled = state.backups.filter(b => (b.label || '').startsWith('⏰'));
+
+  let html = manual.map(_backupItem).join('');
+
+  const groups = {};
+  scheduled.forEach(b => { (groups[b.label] = groups[b.label] || []).push(b); });
+
+  html += Object.entries(groups).map(([label, items]) => {
+    items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    const key = label.replace(/\W/g, '_');
+    const stored = localStorage.getItem(`cb_acc_bk_${key}`);
+    const collapsed = stored === null ? true : stored === '1';   // collapsed by default
+    const dates = `${fmt(items[items.length - 1].created_at)} → ${fmt(items[0].created_at)}`;
+    return `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px">
+      <div onclick="toggleBackupGroup('${key}')" style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
+        <span style="font-size:11px">${collapsed ? '▶' : '▼'}</span>
+        <strong>${escapeHtml(label)}</strong>
+        <span class="text-muted text-sm">${items.length} ${t('copias')} · ${dates}</span>
+      </div>
+      ${collapsed ? '' : `<div style="margin-top:10px;display:grid;gap:10px">${items.map(_backupItem).join('')}</div>`}
+    </div>`;
+  }).join('');
+
+  list.innerHTML = html;
 }
 
 async function verifyBackup(name) {
@@ -980,8 +1083,8 @@ function _updateRow(u) {
       : `<button class="btn btn-primary btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬆️ Actualizar</button>`;
   }
   const statusHtml = u.status === 'checking'
-    ? `<span class="text-muted text-sm">⏳ comprobando…</span>`
-    : badge(`${st.icon} ${st.label}`, st.cls);
+    ? `<span class="text-muted text-sm">${t('⏳ comprobando…')}</span>`
+    : badge(`${st.icon} ${t(st.label)}`, st.cls);
   return `
     <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;width:100%">
       <div style="display:flex;align-items:center;gap:10px;min-width:0">
@@ -1206,6 +1309,7 @@ function monitoringEnabled() { return localStorage.getItem('cb_monitoring') !== 
 function setMonitoring(on) {
   localStorage.setItem('cb_monitoring', on ? '1' : '0');
   if (state.tab === 'monitor') loadMonitor();
+  pollHostMonitor();
 }
 
 let _monitorTimer = null;
@@ -1306,6 +1410,40 @@ async function loadMonitor() {
   }
 }
 
+// ─── Host monitor (header) ───────────────────────────────────────────────────
+let _hostMonTimer = null;
+
+async function pollHostMonitor() {
+  clearTimeout(_hostMonTimer);
+  const box = document.getElementById('host-monitor');
+  if (!monitoringEnabled()) { box.style.display = 'none'; return; }
+
+  try {
+    const h = await API.stats.host();
+    const l1 = [];
+    if (h.cpu_pct != null) l1.push(`🖥 CPU ${h.cpu_pct}%`);
+    if (h.mem) l1.push(`RAM ${_fmtBytes(h.mem.used)}/${_fmtBytes(h.mem.total)} (${h.mem.pct}%)`);
+    if (h.disk) l1.push(`💾 ${_fmtBytes(h.disk.used)}/${_fmtBytes(h.disk.total)} (${h.disk.pct}%)`);
+
+    const l2 = [];
+    if (h.load) l2.push(`⚖ ${h.load.map(x => x.toFixed(2)).join(' ')}`);
+    if (h.temp_c != null) l2.push(`🌡 ${h.temp_c}°C`);
+    if (h.net) l2.push(`🌐 ↓${_fmtBytes(h.net.rx_s)}/s ↑${_fmtBytes(h.net.tx_s)}/s`);
+    if (h.io) l2.push(`💿 R ${_fmtBytes(h.io.read_s)}/s · W ${_fmtBytes(h.io.write_s)}/s`);
+
+    if (l1.length || l2.length) {
+      document.getElementById('host-monitor-l1').textContent = l1.join(' · ');
+      document.getElementById('host-monitor-l2').textContent = l2.join(' · ');
+      box.style.display = 'flex';
+    } else {
+      box.style.display = 'none';
+    }
+  } catch (e) {
+    box.style.display = 'none';   // 401 or host /proc unreachable — hide quietly
+  }
+  _hostMonTimer = setTimeout(pollHostMonitor, 10000);
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 function showLogin() {
   document.getElementById('login-overlay').style.display = 'flex';
@@ -1359,6 +1497,7 @@ async function submitLogin(ev) {
     hideLogin();
     document.getElementById('login-pass').value = '';
     navigate(state.tab || 'backup');
+    pollHostMonitor();
   } catch (e) {
     errBox.textContent = 'Error de conexión';
     errBox.style.display = 'block';
@@ -1368,8 +1507,10 @@ async function submitLogin(ev) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   applyTheme();
+  applyLang();
   document.getElementById('login-form').addEventListener('submit', submitLogin);
-  await initAuth();
+  const authed = await initAuth();
+  if (authed) pollHostMonitor();
 
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => navigate(btn.dataset.tab));

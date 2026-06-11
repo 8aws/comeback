@@ -8,8 +8,15 @@ import asyncio
 from fastapi import APIRouter
 
 from ..docker_client import get_docker
+from ..host_stats import host_stats
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
+
+
+@router.get("/host")
+async def host() -> dict:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, host_stats)
 
 
 def _cpu_percent(s: dict) -> float:

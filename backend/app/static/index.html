@@ -17,6 +17,10 @@
         <div class="logo-sub">Docker Backup & Restore</div>
       </div>
     </a>
+    <div id="host-monitor" style="flex:1;display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--text-muted);line-height:1.4;min-width:0;padding:0 12px">
+      <div id="host-monitor-l1" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%"></div>
+      <div id="host-monitor-l2" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%"></div>
+    </div>
     <nav>
       <button class="nav-btn active" data-tab="backup">📦 Backup</button>
       <button class="nav-btn" data-tab="restore">🔄 Restore</button>
@@ -539,6 +543,15 @@
         </div>
       </div>
 
+      <div>
+        <div class="form-label" style="margin-bottom:6px">Idioma</div>
+        <div class="flex gap-2">
+          <button class="btn btn-sm btn-outline lang-btn" data-lang-pref="auto" onclick="setLang('auto')">🌐 Auto</button>
+          <button class="btn btn-sm btn-outline lang-btn" data-lang-pref="es" onclick="setLang('es')">🇪🇸 Español</button>
+          <button class="btn btn-sm btn-outline lang-btn" data-lang-pref="en" onclick="setLang('en')">🇬🇧 English</button>
+        </div>
+      </div>
+
       <label class="form-check" style="cursor:pointer">
         <input id="settings-monitoring" type="checkbox" onchange="setMonitoring(this.checked)">
         <div>
@@ -591,6 +604,7 @@
   </form>
 </div>
 
+<script src="/static/js/i18n.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/app.js"></script>
 </body>

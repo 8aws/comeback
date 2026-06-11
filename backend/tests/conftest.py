@@ -10,6 +10,7 @@ from app.main import app
 def isolated_settings(tmp_path):
     """Point storage at a temp dir and reset auth state for every test."""
     settings.backup_path = str(tmp_path / "backups")
+    settings.host_root = str(tmp_path / "no-host")   # missing by default
     settings.auth_username = "admin"
     settings.auth_password = ""
     settings.auth_password_hash = ""

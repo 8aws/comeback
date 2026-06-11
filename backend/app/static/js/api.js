@@ -63,6 +63,7 @@ const API = {
   },
   stats: {
     list: () => API.get('/api/stats'),
+    host: () => API.get('/api/stats/host'),
   },
   auth: {
     changePassword: (body) => API.post('/api/auth/change-password', body),
