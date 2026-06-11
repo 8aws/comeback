@@ -33,16 +33,40 @@ _sessions: dict[str, datetime] = {}            # token → expiry (UTC)
 _failures: dict[str, dict] = {}                # ip → {count, locked_until}
 
 
+def _password_file():
+    return settings.backup_dir / ".auth.json"
+
+
+def _stored_hash() -> str:
+    """Password changed from the UI — bcrypt hash stored on the backups volume.
+    Takes precedence over both env vars so the change survives recreations."""
+    try:
+        import json
+        return json.loads(_password_file().read_text()).get("password_hash", "")
+    except Exception:
+        return ""
+
+
+def set_password(new_plain: str):
+    import bcrypt
+    import json
+    _password_file().parent.mkdir(parents=True, exist_ok=True)
+    _password_file().write_text(json.dumps({
+        "password_hash": bcrypt.hashpw(new_plain.encode(), bcrypt.gensalt()).decode(),
+    }))
+
+
 def auth_enabled() -> bool:
-    return bool(settings.auth_password or settings.auth_password_hash)
+    return bool(settings.auth_password or settings.auth_password_hash or _stored_hash())
 
 
 def _verify_password(plain: str) -> bool:
-    """AUTH_PASSWORD_HASH (bcrypt) takes precedence over plain AUTH_PASSWORD."""
-    if settings.auth_password_hash:
+    """Precedence: UI-stored hash → AUTH_PASSWORD_HASH → plain AUTH_PASSWORD."""
+    stored = _stored_hash() or settings.auth_password_hash
+    if stored:
         try:
             import bcrypt
-            return bcrypt.checkpw(plain.encode(), settings.auth_password_hash.encode())
+            return bcrypt.checkpw(plain.encode(), stored.encode())
         except Exception:
             return False
     return secrets.compare_digest(plain, settings.auth_password)
@@ -174,4 +198,35 @@ async def login(body: LoginRequest, request: Request, response: Response):
 def logout(request: Request, response: Response):
     destroy_session(request.cookies.get(COOKIE_NAME))
     response.delete_cookie(COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+async def change_password(body: ChangePasswordRequest, request: Request, response: Response):
+    # /api/auth/* is exempt from the middleware — enforce the session here
+    if not is_authenticated(request):
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+    if not auth_enabled():
+        return JSONResponse(status_code=400, content={
+            "detail": "Sin autenticación activa — define AUTH_PASSWORD primero"})
+    if not _verify_password(body.current_password):
+        await asyncio.sleep(FAIL_DELAY_SECONDS)
+        return JSONResponse(status_code=401, content={"detail": "Contraseña actual incorrecta"})
+    if len(body.new_password) < 8:
+        return JSONResponse(status_code=400, content={
+            "detail": "La nueva contraseña debe tener al menos 8 caracteres"})
+
+    set_password(body.new_password)
+    # Invalidate every session, then re-issue one for this client
+    _sessions.clear()
+    token = create_session()
+    response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax",
+                        path="/", max_age=SESSION_HOURS * 3600)
+    logger.info("Password changed from %s — all other sessions invalidated",
+                _client_ip(request))
     return {"ok": True}

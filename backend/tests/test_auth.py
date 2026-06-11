@@ -84,3 +84,48 @@ def test_auth_routes_exempt_from_middleware(client):
 def test_failed_login_has_delay_configured(delay, monkeypatch):
     # The 1s anti-brute-force delay must exist (we don't wait for it in tests)
     assert auth_module.FAIL_DELAY_SECONDS >= 1.0
+
+
+# ─── change password ─────────────────────────────────────────────────────────
+
+def test_change_password_full_flow(auth_client):
+    r = auth_client.post("/api/auth/change-password", json={
+        "current_password": "secret123", "new_password": "nuevaclave9"})
+    assert r.status_code == 200
+    # stored hash file created and takes precedence over env password
+    assert (auth_module._password_file()).exists()
+    auth_module._sessions.clear()
+    assert _login(auth_client, password="secret123").status_code == 401
+    auth_module._failures.clear()
+    assert _login(auth_client, password="nuevaclave9").status_code == 200
+
+
+def test_change_password_requires_auth(client):
+    from app.config import settings
+    settings.auth_password = "secret123"
+    r = client.post("/api/auth/change-password", json={
+        "current_password": "secret123", "new_password": "nuevaclave9"})
+    assert r.status_code == 401
+
+
+def test_change_password_validates(auth_client):
+    r = auth_client.post("/api/auth/change-password", json={
+        "current_password": "WRONG", "new_password": "nuevaclave9"})
+    assert r.status_code == 401
+    r = auth_client.post("/api/auth/change-password", json={
+        "current_password": "secret123", "new_password": "corta"})
+    assert r.status_code == 400
+
+
+def test_system_endpoint_reports_version(auth_client):
+    from app.config import APP_VERSION
+    r = auth_client.get("/api/system")
+    assert r.status_code == 200
+    assert r.json()["version"] == APP_VERSION
+    assert r.json()["instance_name"] == "test-instance"
+
+
+def test_system_endpoint_requires_auth(client):
+    from app.config import settings
+    settings.auth_password = "secret123"
+    assert client.get("/api/system").status_code == 401

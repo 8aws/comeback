@@ -22,6 +22,7 @@ function navigate(tab) {
   if (tab === 'jobs') loadJobs();
   if (tab === 'deploy') loadTemplates();
   if (tab === 'updates') loadUpdates();
+  if (tab === 'monitor') loadMonitor(); else clearTimeout(_monitorTimer);
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -1070,6 +1071,152 @@ async function viewJob(id) {
   }
 }
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
+function applyTheme() {
+  const pref = localStorage.getItem('cb_theme') || 'dark';
+  const resolved = pref === 'system'
+    ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    : pref;
+  document.documentElement.dataset.theme = resolved;
+  document.querySelectorAll('.theme-btn').forEach(b =>
+    b.classList.toggle('btn-primary', b.dataset.themePref === pref));
+}
+
+function setTheme(pref) {
+  localStorage.setItem('cb_theme', pref);
+  applyTheme();
+}
+
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if ((localStorage.getItem('cb_theme') || 'dark') === 'system') applyTheme();
+});
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-modal').style.display = 'flex';
+  document.getElementById('settings-monitoring').checked = monitoringEnabled();
+  applyTheme();   // refresh button highlight
+  API.system.info().then(info => {
+    document.getElementById('settings-version').textContent = `v${info.version}`;
+    document.getElementById('settings-instance').textContent = info.instance_name;
+  }).catch(() => {});
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').style.display = 'none';
+  document.getElementById('pw-error').style.display = 'none';
+  ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => document.getElementById(id).value = '');
+}
+
+async function changePassword() {
+  const errBox = document.getElementById('pw-error');
+  errBox.style.display = 'none';
+  const current = document.getElementById('pw-current').value;
+  const nw = document.getElementById('pw-new').value;
+  const confirm_ = document.getElementById('pw-confirm').value;
+  if (nw !== confirm_) {
+    errBox.textContent = 'Las contraseñas nuevas no coinciden';
+    errBox.style.display = 'block';
+    return;
+  }
+  try {
+    await API.auth.changePassword({ current_password: current, new_password: nw });
+    closeSettings();
+    showToast('Contraseña cambiada — el resto de sesiones se han cerrado', 'success');
+  } catch (e) {
+    let detail = e.message;
+    try { detail = JSON.parse(e.message).detail; } catch (_) {}
+    errBox.textContent = detail;
+    errBox.style.display = 'block';
+  }
+}
+
+async function doLogout() {
+  try { await API.auth.logout(); } catch (e) {}
+  closeSettings();
+  showLogin();
+}
+
+// ─── Monitor ──────────────────────────────────────────────────────────────────
+function monitoringEnabled() { return localStorage.getItem('cb_monitoring') !== '0'; }
+function setMonitoring(on) {
+  localStorage.setItem('cb_monitoring', on ? '1' : '0');
+  if (state.tab === 'monitor') loadMonitor();
+}
+
+let _monitorTimer = null;
+
+function _statBar(pct, color) {
+  const w = Math.min(Math.max(pct, 0), 100);
+  return `<div class="stat-bar-track"><div class="stat-bar" style="width:${w}%;background:${color}"></div></div>`;
+}
+
+function _fmtBytes(n) {
+  if (n == null) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+async function loadMonitor() {
+  clearTimeout(_monitorTimer);
+  const list = document.getElementById('monitor-list');
+  const statusEl = document.getElementById('monitor-status');
+
+  if (!monitoringEnabled()) {
+    list.innerHTML = '<div class="alert info">⏸ Monitoreo desactivado — actívalo en ⚙️ Ajustes.</div>';
+    statusEl.textContent = 'desactivado';
+    return;
+  }
+
+  try {
+    const stats = await API.stats.list();
+    statusEl.textContent = `actualizado ${new Date().toLocaleTimeString('es-ES')} · cada 5s`;
+    if (!stats.length) {
+      list.innerHTML = '<div class="text-muted text-sm">No hay contenedores en ejecución.</div>';
+    } else {
+      list.innerHTML = `
+      <div style="display:grid;gap:10px">
+        ${stats.map(s => {
+          if (s.error) return `<div class="container-item"><strong>${escapeHtml(s.name)}</strong><span class="text-muted text-sm">${escapeHtml(s.error)}</span></div>`;
+          const cpuColor = s.cpu_pct > 80 ? 'var(--error)' : s.cpu_pct > 50 ? 'var(--warning)' : 'var(--success)';
+          const memColor = s.mem_pct > 80 ? 'var(--error)' : s.mem_pct > 50 ? 'var(--warning)' : 'var(--blue)';
+          return `
+          <div class="container-item" style="display:grid;grid-template-columns:minmax(140px,1fr) 2fr 2fr auto;gap:14px;align-items:center;cursor:default">
+            <div style="min-width:0">
+              <div class="container-name">${escapeHtml(s.name)}</div>
+              <div class="text-muted" style="font-size:11px">${s.pids} pids</div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                <span class="text-muted">CPU</span><span>${s.cpu_pct}%</span>
+              </div>
+              ${_statBar(s.cpu_pct, cpuColor)}
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                <span class="text-muted">RAM</span><span>${_fmtBytes(s.mem_usage)} / ${_fmtBytes(s.mem_limit)} (${s.mem_pct}%)</span>
+              </div>
+              ${_statBar(s.mem_pct, memColor)}
+            </div>
+            <div class="text-muted" style="font-size:11px;text-align:right;line-height:1.6">
+              🌐 ↓${_fmtBytes(s.net_rx)} ↑${_fmtBytes(s.net_tx)}<br>
+              💾 R ${_fmtBytes(s.block_read)} · W ${_fmtBytes(s.block_write)}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+  } catch (e) {
+    list.innerHTML = `<div class="alert error">Error obteniendo estadísticas: ${escapeHtml(e.message)}</div>`;
+  }
+
+  if (state.tab === 'monitor' && monitoringEnabled()) {
+    _monitorTimer = setTimeout(loadMonitor, 5000);
+  }
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 function showLogin() {
   document.getElementById('login-overlay').style.display = 'flex';
@@ -1131,6 +1278,7 @@ async function submitLogin(ev) {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  applyTheme();
   document.getElementById('login-form').addEventListener('submit', submitLogin);
   await initAuth();
 

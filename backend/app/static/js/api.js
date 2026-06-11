@@ -56,6 +56,16 @@ const API = {
     start: (body) => API.post('/api/updates/start', body),
     startAll: (body) => API.post('/api/updates/start-all', body),
   },
+  system: {
+    info: () => API.get('/api/system'),
+  },
+  stats: {
+    list: () => API.get('/api/stats'),
+  },
+  auth: {
+    changePassword: (body) => API.post('/api/auth/change-password', body),
+    logout: () => API.post('/api/auth/logout', {}),
+  },
   schedules: {
     list: () => API.get('/api/schedules'),
     create: (body) => API.post('/api/schedules', body),

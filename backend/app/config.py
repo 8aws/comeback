@@ -3,6 +3,8 @@ import socket
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
+APP_VERSION = "1.6.0"
+
 
 class Settings(BaseSettings):
     backup_path: str = "/backups"

@@ -472,3 +472,27 @@ main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; }
 /* ─── Container filters & problems ─── */
 .container-item.problem { border-color: var(--red); }
 .container-item.problem:hover { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+
+/* ─── Light theme ─── */
+[data-theme="light"] {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface2: #f0f2f5;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-muted: #59636e;
+  --accent: #1a7f37;
+  --accent-hover: #2da44e;
+  --blue: #0969da;
+  --blue-hover: #218bff;
+  --red: #cf222e;
+  --yellow: #9a6700;
+  --purple: #8250df;
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --error: #cf222e;
+}
+
+/* ─── Monitor bars ─── */
+.stat-bar-track { background: var(--surface2); border-radius: 4px; height: 8px; overflow: hidden; }
+.stat-bar { height: 100%; border-radius: 4px; transition: width 0.4s; }

@@ -8,12 +8,13 @@ from pathlib import Path
 from . import auth
 import asyncio
 
-from .api import containers, backup, restore, jobs, cleanup, deploy, schedules, updates
+from .api import containers, backup, restore, jobs, cleanup, deploy, schedules, stats, updates
+from .config import APP_VERSION, settings
 from .scheduler import scheduler_loop
 
 logger = logging.getLogger("comeback")
 
-app = FastAPI(title="uverse comeback", version="1.0.0", docs_url="/api/docs")
+app = FastAPI(title="uverse comeback", version=APP_VERSION, docs_url="/api/docs")
 
 
 @app.middleware("http")
@@ -44,6 +45,16 @@ app.include_router(cleanup.router)
 app.include_router(deploy.router)
 app.include_router(updates.router)
 app.include_router(schedules.router)
+app.include_router(stats.router)
+
+
+@app.get("/api/system")
+def system_info():
+    return {
+        "version": APP_VERSION,
+        "instance_name": settings.effective_instance_name,
+        "tz": settings.tz,
+    }
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
