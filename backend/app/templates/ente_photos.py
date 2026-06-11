@@ -492,7 +492,8 @@ s3:
             await job.log(LogLevel.info, f"  ente-minio creado — iniciando health check")
             await self._wait_healthy_async(
                 "ente-minio",
-                ["wget", "-q", "-O", "/dev/null", "http://localhost:3200/minio/health/live"],
+                # la imagen actual de MinIO trae curl pero no wget
+                ["curl", "-sf", "http://localhost:3200/minio/health/live"],
                 "MinIO", job,
             )
 
