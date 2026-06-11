@@ -72,6 +72,7 @@ async def container_stats() -> list[dict]:
         return {
             "id": c.id[:12],
             "name": c.name,
+            "created": c.attrs.get("Created"),
             "cpu_pct": _cpu_percent(s),
             "mem_usage": mem_usage,
             "mem_limit": mem_limit,

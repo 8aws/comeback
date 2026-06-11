@@ -19,21 +19,27 @@ def _container_sizes(client) -> dict[str, int]:
 
 @router.get("")
 def list_containers():
+    """Container list WITHOUT sizes — size computation can take many seconds
+    on the daemon, so the UI fetches /api/containers/sizes separately."""
     client = get_docker()
     containers = client.containers.list(all=True)
-    sizes = _container_sizes(client)
     result = []
     for c in containers:
         try:
-            info = get_container_info(c)
-            size = sizes.get(info.id)
-            if size is not None:
-                info.size_bytes = size
-                info.size_human = humanize.naturalsize(size)
-            result.append(info.model_dump())
+            result.append(get_container_info(c).model_dump())
         except Exception as e:
             result.append({"id": c.id[:12], "name": c.name, "error": str(e)})
     return result
+
+
+@router.get("/sizes")
+def container_sizes():
+    """Disk usage per container id (slow daemon call, fetched in background)."""
+    client = get_docker()
+    return {
+        cid: {"size_bytes": size, "size_human": humanize.naturalsize(size)}
+        for cid, size in _container_sizes(client).items()
+    }
 
 
 @router.get("/{container_id}")

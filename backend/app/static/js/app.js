@@ -210,10 +210,20 @@ function openJobModal(jobId, title) {
 // ─── BACKUP TAB ───────────────────────────────────────────────────────────────
 async function loadContainers() {
   const grid = document.getElementById('container-grid');
-  grid.innerHTML = '<div class="text-muted text-sm">Loading containers...</div>';
+  grid.innerHTML = '<div class="text-muted text-sm">Cargando contenedores…</div>';
   try {
+    // Phase 1: fast list without sizes — render immediately
     state.containers = await API.containers.list();
     renderContainers();
+    // Phase 2: sizes are slow (daemon computes disk usage) — merge when ready
+    API.containers.sizes().then(sizes => {
+      let changed = false;
+      state.containers.forEach(c => {
+        const s = sizes[c.id];
+        if (s) { c.size_bytes = s.size_bytes; c.size_human = s.size_human; changed = true; }
+      });
+      if (changed && state.tab === 'backup') renderContainers();
+    }).catch(() => {});
   } catch (e) {
     grid.innerHTML = `<div class="alert error">Failed to load containers: ${e.message}</div>`;
   }
@@ -308,6 +318,10 @@ function _accordionGroup(key, title, items, alwaysOpen = false) {
 
 function renderContainers() {
   const grid = document.getElementById('container-grid');
+
+  // 3-4 columns need the full page width — drop the sidebar below the grid
+  const layout = document.getElementById('backup-layout');
+  if (layout) layout.style.gridTemplateColumns = viewPrefs.cols >= 3 ? '1fr' : '1fr 320px';
 
   // Toolbar state
   document.querySelectorAll('.filter-chip').forEach(b =>
@@ -957,46 +971,96 @@ const UPDATE_STATUS = {
   unknown: { label: 'Desconocido',              cls: '',        icon: '❓' },
 };
 
+function _updateRow(u) {
+  const st = UPDATE_STATUS[u.status] || UPDATE_STATUS.unknown;
+  let action = '';
+  if (u.status === 'update') {
+    action = u.is_self
+      ? `<button class="btn btn-outline btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬇ Solo pull</button>`
+      : `<button class="btn btn-primary btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬆️ Actualizar</button>`;
+  }
+  const statusHtml = u.status === 'checking'
+    ? `<span class="text-muted text-sm">⏳ comprobando…</span>`
+    : badge(`${st.icon} ${st.label}`, st.cls);
+  return `
+    <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;width:100%">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        ${statusDot(u.running)}
+        <div style="min-width:0">
+          <div><strong>${escapeHtml(u.name)}</strong>${u.is_self ? ' ' + badge('comeback', '') : ''}</div>
+          <div class="text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(u.image)}</div>
+          ${u.detail ? `<div class="text-muted text-sm">${escapeHtml(u.detail)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        ${statusHtml}
+        ${action}
+      </div>
+    </div>`;
+}
+
 async function loadUpdates() {
   const list = document.getElementById('updates-list');
-  list.innerHTML = '<div class="text-muted text-sm">Consultando registries…</div>';
+  list.innerHTML = '<div class="text-muted text-sm">Cargando contenedores…</div>';
   try {
-    const items = await API.updates.list();
-    if (!items.length) {
+    // Fast container list first — rows render at once, checks fill in one by one
+    const containers = await API.containers.list();
+    if (!containers.length) {
       list.innerHTML = '<div class="text-muted text-sm">No hay contenedores.</div>';
       return;
     }
-    const updatable = items.filter(u => u.status === 'update' && !u.is_self);
-    const bulkBtn = updatable.length > 1 ? `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-        <button class="btn btn-primary" onclick="startUpdateAll(${JSON.stringify(updatable.map(u => u.id)).replace(/"/g, '&quot;')})">
-          ⬆️ Actualizar todos (${updatable.length})
-        </button>
-      </div>` : '';
-    list.innerHTML = bulkBtn + items.map(u => {
-      const st = UPDATE_STATUS[u.status] || UPDATE_STATUS.unknown;
-      let action = '';
-      if (u.status === 'update') {
-        action = u.is_self
-          ? `<button class="btn btn-outline btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬇ Solo pull</button>`
-          : `<button class="btn btn-primary btn-sm" onclick="startUpdate('${u.id}', '${escapeHtml(u.name)}')">⬆️ Actualizar</button>`;
+
+    list.innerHTML = `
+      <div id="updates-progress" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span class="text-muted">Consultando registries…</span>
+          <span id="updates-progress-count" class="text-muted">0/${containers.length}</span>
+        </div>
+        <div class="stat-bar-track"><div id="updates-progress-bar" class="stat-bar" style="width:0%;background:var(--blue)"></div></div>
+      </div>
+      <div id="updates-bulk"></div>
+      ${containers.map(c => `
+        <div class="container-item" id="update-row-${c.id}" style="cursor:default">
+          ${_updateRow({ id: c.id, name: c.name, image: c.image, running: c.running, is_self: false, status: 'checking', detail: null })}
+        </div>`).join('')}`;
+
+    // Sequential-ish checks (3 at a time) so the page stays responsive
+    const results = [];
+    let done = 0;
+    const queue = [...containers];
+    async function worker() {
+      while (queue.length) {
+        const c = queue.shift();
+        let u;
+        try {
+          u = await API.updates.check(c.id);
+        } catch (e) {
+          u = { id: c.id, name: c.name, image: c.image, running: c.running, is_self: false, status: 'unknown', detail: e.message };
+        }
+        results.push(u);
+        done++;
+        const row = document.getElementById(`update-row-${c.id}`);
+        if (row) row.innerHTML = _updateRow(u);
+        const bar = document.getElementById('updates-progress-bar');
+        const count = document.getElementById('updates-progress-count');
+        if (bar) bar.style.width = `${Math.round(done / containers.length * 100)}%`;
+        if (count) count.textContent = `${done}/${containers.length}`;
       }
-      return `
-      <div class="container-item" style="display:flex;align-items:center;gap:12px;justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0">
-          ${statusDot(u.running)}
-          <div style="min-width:0">
-            <div><strong>${escapeHtml(u.name)}</strong>${u.is_self ? ' ' + badge('comeback', '') : ''}</div>
-            <div class="text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(u.image)}</div>
-            ${u.detail ? `<div class="text-muted text-sm">${escapeHtml(u.detail)}</div>` : ''}
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
-          ${badge(`${st.icon} ${st.label}`, st.cls)}
-          ${action}
-        </div>
-      </div>`;
-    }).join('');
+    }
+    await Promise.all([worker(), worker(), worker()]);
+
+    const progress = document.getElementById('updates-progress');
+    if (progress) progress.remove();
+    const updatable = results.filter(u => u.status === 'update' && !u.is_self);
+    const bulk = document.getElementById('updates-bulk');
+    if (bulk && updatable.length > 1) {
+      bulk.innerHTML = `
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+          <button class="btn btn-primary" onclick="startUpdateAll(${JSON.stringify(updatable.map(u => u.id)).replace(/"/g, '&quot;')})">
+            ⬆️ Actualizar todos (${updatable.length})
+          </button>
+        </div>`;
+    }
   } catch (e) {
     list.innerHTML = `<div class="alert error">Error comprobando actualizaciones: ${escapeHtml(e.message)}</div>`;
   }
@@ -1146,6 +1210,28 @@ function setMonitoring(on) {
 
 let _monitorTimer = null;
 
+function setMonitorSort(v) {
+  localStorage.setItem('cb_msort', v);
+  loadMonitor();
+}
+
+function _sortStats(stats) {
+  const sort = localStorage.getItem('cb_msort') || 'cpu';
+  const favs = viewPrefs.favorites;
+  return [...stats].sort((a, b) => {
+    if (sort === 'cpu')  return (b.cpu_pct || 0) - (a.cpu_pct || 0);
+    if (sort === 'ram')  return (b.mem_usage || 0) - (a.mem_usage || 0);
+    if (sort === 'net')  return ((b.net_rx || 0) + (b.net_tx || 0)) - ((a.net_rx || 0) + (a.net_tx || 0));
+    if (sort === 'disk') return ((b.block_read || 0) + (b.block_write || 0)) - ((a.block_read || 0) + (a.block_write || 0));
+    if (sort === 'created') return (b.created || '').localeCompare(a.created || '');
+    if (sort === 'favs') {
+      const fa = favs.has(a.name) ? 0 : 1, fb = favs.has(b.name) ? 0 : 1;
+      return fa !== fb ? fa - fb : a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);   // name
+  });
+}
+
 function _statBar(pct, color) {
   const w = Math.min(Math.max(pct, 0), 100);
   return `<div class="stat-bar-track"><div class="stat-bar" style="width:${w}%;background:${color}"></div></div>`;
@@ -1170,8 +1256,11 @@ async function loadMonitor() {
     return;
   }
 
+  const sortSel = document.getElementById('monitor-sort');
+  if (sortSel) sortSel.value = localStorage.getItem('cb_msort') || 'cpu';
+
   try {
-    const stats = await API.stats.list();
+    const stats = _sortStats(await API.stats.list());
     statusEl.textContent = `actualizado ${new Date().toLocaleTimeString('es-ES')} · cada 5s`;
     if (!stats.length) {
       list.innerHTML = '<div class="text-muted text-sm">No hay contenedores en ejecución.</div>';

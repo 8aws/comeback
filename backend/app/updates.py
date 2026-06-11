@@ -47,51 +47,62 @@ def _local_digests(container) -> set[str]:
         return set()
 
 
+async def _check_one(c, self_id: str) -> dict:
+    client = get_docker()
+    loop = asyncio.get_event_loop()
+    image_ref = c.attrs["Config"]["Image"]
+    entry = {
+        "id": c.id[:12],
+        "name": c.name,
+        "image": image_ref,
+        "running": c.status == "running",
+        "is_self": bool(self_id) and c.id.startswith(self_id),
+        "status": "unknown",
+        "detail": None,
+    }
+    if "@sha256:" in image_ref:
+        entry["status"] = "pinned"
+        entry["detail"] = "Imagen fijada por digest — sin seguimiento de tag"
+        return entry
+    local = _local_digests(c)
+    if not local:
+        entry["status"] = "local"
+        entry["detail"] = "Imagen construida localmente — no hay registry que consultar"
+        return entry
+    try:
+        reg_data = await loop.run_in_executor(
+            None, lambda: client.images.get_registry_data(image_ref))
+        remote_digest = reg_data.id
+        entry["status"] = "current" if remote_digest in local else "update"
+        if entry["status"] == "update":
+            entry["detail"] = f"Nuevo digest: {remote_digest[:19]}…"
+    except Exception as e:
+        msg = str(e)
+        if "denied" in msg or "unauthorized" in msg or "not found" in msg.lower():
+            # Docker Desktop's containerd store gives RepoDigests to local
+            # builds too — a denied registry lookup means a local-only image
+            entry["status"] = "local"
+            entry["detail"] = "Imagen no publicada en un registry accesible"
+        else:
+            entry["detail"] = f"No se pudo consultar el registry: {msg}"
+    return entry
+
+
+async def check_container(container_id: str) -> dict:
+    """Update status for a single container — used for progressive UI checks."""
+    client = get_docker()
+    loop = asyncio.get_event_loop()
+    c = await loop.run_in_executor(None, lambda: client.containers.get(container_id))
+    return await _check_one(c, _self_container_id())
+
+
 async def check_updates() -> list[dict]:
     client = get_docker()
     loop = asyncio.get_event_loop()
     containers = await loop.run_in_executor(None, lambda: client.containers.list(all=True))
     self_id = _self_container_id()
 
-    async def check_one(c) -> dict:
-        image_ref = c.attrs["Config"]["Image"]
-        entry = {
-            "id": c.id[:12],
-            "name": c.name,
-            "image": image_ref,
-            "running": c.status == "running",
-            "is_self": bool(self_id) and c.id.startswith(self_id),
-            "status": "unknown",
-            "detail": None,
-        }
-        if "@sha256:" in image_ref:
-            entry["status"] = "pinned"
-            entry["detail"] = "Imagen fijada por digest — sin seguimiento de tag"
-            return entry
-        local = _local_digests(c)
-        if not local:
-            entry["status"] = "local"
-            entry["detail"] = "Imagen construida localmente — no hay registry que consultar"
-            return entry
-        try:
-            reg_data = await loop.run_in_executor(
-                None, lambda: client.images.get_registry_data(image_ref))
-            remote_digest = reg_data.id
-            entry["status"] = "current" if remote_digest in local else "update"
-            if entry["status"] == "update":
-                entry["detail"] = f"Nuevo digest: {remote_digest[:19]}…"
-        except Exception as e:
-            msg = str(e)
-            if "denied" in msg or "unauthorized" in msg or "not found" in msg.lower():
-                # Docker Desktop's containerd store gives RepoDigests to local
-                # builds too — a denied registry lookup means a local-only image
-                entry["status"] = "local"
-                entry["detail"] = "Imagen no publicada en un registry accesible"
-            else:
-                entry["detail"] = f"No se pudo consultar el registry: {msg}"
-        return entry
-
-    results = await asyncio.gather(*(check_one(c) for c in containers))
+    results = await asyncio.gather(*(_check_one(c, self_id) for c in containers))
     # updates first, then current, self always near the end of its group
     order = {"update": 0, "unknown": 1, "local": 2, "pinned": 3, "current": 4}
     return sorted(results, key=lambda r: (order.get(r["status"], 9), r["is_self"], r["name"]))

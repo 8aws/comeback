@@ -34,6 +34,7 @@ const API = {
 
   containers: {
     list: () => API.get('/api/containers'),
+    sizes: () => API.get('/api/containers/sizes'),
   },
   backups: {
     list: () => API.get('/api/backups'),
@@ -53,6 +54,7 @@ const API = {
   },
   updates: {
     list: () => API.get('/api/updates'),
+    check: (id) => API.get(`/api/updates/check/${id}`),
     start: (body) => API.post('/api/updates/start', body),
     startAll: (body) => API.post('/api/updates/start-all', body),
   },

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from ..job_manager import job_manager
 from ..models import JobType, UpdateRequest
-from ..updates import check_updates, run_update, run_update_all
+from ..updates import check_container, check_updates, run_update, run_update_all
 
 router = APIRouter(prefix="/api/updates", tags=["updates"])
 
@@ -18,6 +18,14 @@ class BulkUpdateRequest(BaseModel):
 @router.get("")
 async def list_updates() -> list[dict]:
     return await check_updates()
+
+
+@router.get("/check/{container_id}")
+async def check_single(container_id: str) -> dict:
+    try:
+        return await check_container(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/start")

@@ -47,7 +47,7 @@
 
     <!-- ─── BACKUP TAB ─────────────────────────────────────────────────── -->
     <div id="tab-backup" class="tab-panel active">
-      <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start">
+      <div id="backup-layout" style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start">
 
         <div class="card">
           <div class="card-header">
@@ -312,7 +312,19 @@
       <div class="card">
         <div class="card-header">
           <h2>📊 Monitor de recursos</h2>
-          <span id="monitor-status" class="text-muted text-sm"></span>
+          <div class="flex gap-2" style="align-items:center">
+            <select id="monitor-sort" onchange="setMonitorSort(this.value)"
+              style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px">
+              <option value="cpu">Mayor CPU</option>
+              <option value="ram">Mayor RAM</option>
+              <option value="net">Mayor red</option>
+              <option value="disk">Mayor disco</option>
+              <option value="name">A → Z</option>
+              <option value="favs">⭐ Favoritos primero</option>
+              <option value="created">Más recientes</option>
+            </select>
+            <span id="monitor-status" class="text-muted text-sm"></span>
+          </div>
         </div>
         <div class="card-body">
           <div id="monitor-list"><div class="text-muted text-sm">Cargando estadísticas…</div></div>
