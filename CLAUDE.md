@@ -6,18 +6,23 @@ Reference document for AI assistants working on this codebase. Contains everythi
 
 ## 1. Project Overview
 
-**comeback** is a self-hosted Docker backup/restore tool designed to run as a container on a QNAP NAS behind a Cosmos Cloud reverse proxy. It lets you:
+**comeback** is a self-hosted Docker backup/restore/deploy tool designed to run as a container on NAS systems (QNAP, ZimaOS) optionally behind a Cosmos Cloud reverse proxy. Current version: see `APP_VERSION` in `app/config.py`. It provides:
 
-- Select running or stopped Docker containers via a web UI.
-- Capture full container configuration, named volumes, bind mounts, and database dumps into a single compressed, checksummed archive.
-- Restore from any archive: recreate networks, volumes, and containers with original configuration, optionally injecting a name prefix for safe parallel testing.
-- Verify archive integrity (SHA-256 + manifest check) without restoring.
+- **Backup**: full container configuration, named volumes, bind mounts, and database dumps into a single compressed, checksummed archive. Manual or scheduled (daily/weekly with retention).
+- **Restore**: recreate networks, volumes, and containers with original configuration. Test mode via name prefix. Cross-host migrations: upload archives from another instance and remap bind-mount paths.
+- **Deploy**: stack templates (Ente Photos, Plex, Portainer, Grafana, Nextcloud), arbitrary Compose YAML or inline Dockerfile, with streaming pull progress, rollback on failure and post-deploy auto-backup. Environment report (used ports, generic bind roots, shared networks) to avoid conflicts.
+- **Updates**: Watchtower-style image update detection (digest comparison), one-click or bulk update with optional pre-update backup, recreation and automatic rollback if the new image crashes.
+- **Container management**: per-container actions (start/stop/restart/pause/unpause/kill inline; pull/recreate as jobs), Cosmos-style cards with status badge, ports, networks and CPU/RAM sparkline.
+- **Monitoring**: per-container stats tab, live metrics in cards, host-wide monitor in the header (CPU/RAM/disk/load/temp/net/IO from host /proc via /host).
+- **Auth**: single-user login with brute-force lockout, bcrypt hash support, UI password change persisted on the backups volume.
+- **i18n**: Spanish/English with browser auto-detection (client-side; backend job logs remain Spanish).
 
 **Deployment context:**
 - Runs as a single Docker container (`uverse-comeback`) exposed on port `7731`.
-- Accessed via Cosmos Cloud reverse proxy (HTTPS termination, wss:// WebSocket proxying).
-- Host filesystem is bind-mounted at `/host` for bind-mount backup/restore.
-- Backup storage is a named Docker volume (`uverse-comeback-backups`) mounted at `/backups`.
+- Published image: `espiralvex/comeback` on Docker Hub (amd64+arm64); GitHub repo `8aws/comeback`. Tag `v*` triggers the publish workflow; every push runs the pytest CI.
+- Optionally accessed via Cosmos Cloud reverse proxy (HTTPS termination, wss:// WebSocket proxying).
+- Host filesystem is bind-mounted at `/host` for bind-mount backup/restore and host monitoring.
+- Backup storage is a named Docker volume (`uverse-comeback-backups`) mounted at `/backups`. Also holds job history (`.jobs/jobs.jsonl`), schedules (`.schedules.json`) and the UI-set password hash (`.auth.json`).
 
 ---
 
@@ -61,12 +66,49 @@ System tools installed in the image: `pigz`, `gzip`, `tar`, `curl`. There is **n
 
 All API routes are prefixed under `/api`. The SPA catch-all handles everything else.
 
+### Auth (exempt from the auth middleware — checks session internally where needed)
+
+| Method | Path | Body | Purpose |
+|---|---|---|---|
+| GET | `/api/auth/status` | — | `{auth_enabled, authenticated, instance_name}` — public, feeds login screen |
+| POST | `/api/auth/login` | `{username, password}` | Sets session cookie; 1s delay per failure, 15 min IP lockout after 5 |
+| POST | `/api/auth/logout` | — | Destroys session |
+| POST | `/api/auth/change-password` | `{current_password, new_password}` | Requires session; stores bcrypt hash in `/backups/.auth.json` (precedence over env), clears all sessions |
+
 ### Containers
 
 | Method | Path | Body | Response | Purpose |
 |---|---|---|---|---|
-| GET | `/api/containers` | — | `ContainerInfo[]` | List all containers (running + stopped) with mounts, networks, db detection |
+| GET | `/api/containers` | — | `ContainerInfo[]` | Fast list WITHOUT sizes (running + stopped) with mounts, networks, db detection, created, health, exit_code |
+| GET | `/api/containers/sizes` | — | `{id: {size_bytes, size_human}}` | Disk usage per container (slow daemon call, fetched separately by the UI) |
 | GET | `/api/containers/{id}` | — | `ContainerInfo` | Single container detail |
+| POST | `/api/containers/{id}/action` | `{action}` | `{ok}` or `{job_id}` | start/stop/restart/pause/unpause/kill inline; recreate/pull return a job |
+
+### Updates
+
+| Method | Path | Body | Purpose |
+|---|---|---|---|
+| GET | `/api/updates` | — | Update status for all containers (digest comparison) |
+| GET | `/api/updates/check/{id}` | — | Single-container check (progressive UI) |
+| POST | `/api/updates/start` | `{container_id, backup_first}` | Update one container (job) |
+| POST | `/api/updates/start-all` | `{container_ids, backup_first}` | Serial bulk update in one job, continues past failures |
+
+### Schedules
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET/POST | `/api/schedules` | List (with computed next_run) / create |
+| PUT/DELETE | `/api/schedules/{id}` | Update (incl. enabled toggle) / delete |
+| POST | `/api/schedules/{id}/run` | Run now (job) |
+
+### Stats & system
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/stats` | Per-running-container CPU/RAM/net/blockIO/pids (parallel one-shot docker stats, ~2s) |
+| GET | `/api/stats/host` | Host-wide CPU/RAM/disk/load/temp/net/IO from host /proc//sys; rates need two samples (counters cached) |
+| GET | `/api/system` | `{version, instance_name, tz}` |
+| GET | `/api/deploy/environment` | Used ports (docker + host listeners), generic bind roots, shared networks |
 
 ### Backups
 
@@ -76,6 +118,7 @@ All API routes are prefixed under `/api`. The SPA catch-all handles everything e
 | GET | `/api/backups/{backup_name}/manifest` | — | manifest dict | Read full manifest from archive |
 | DELETE | `/api/backups/{backup_name}` | — | `{"deleted": name}` | Delete archive + .sha256 sidecar |
 | GET | `/api/backups/{backup_name}/download` | — | file stream | Download raw .tar.gz |
+| POST | `/api/backups/upload` | multipart `file` | summary dict | Import archive from another instance (streamed, SHA-256 on the fly, manifest validated, 409 on duplicate) |
 | POST | `/api/backups/start` | `BackupRequest` | `{"job_id": str}` | Start async backup job |
 
 `backup_name` is the archive stem without `.tar.gz` (e.g. `backup_20240101_120000_a1b2c3d4`).
@@ -84,8 +127,17 @@ All API routes are prefixed under `/api`. The SPA catch-all handles everything e
 
 | Method | Path | Body | Response | Purpose |
 |---|---|---|---|---|
-| POST | `/api/restore/start` | `RestoreRequest` | `{"job_id": str}` | Start async restore job |
+| POST | `/api/restore/start` | `RestoreRequest` | `{"job_id": str}` | Start async restore job. `path_map` ({old_prefix: new_prefix}, longest prefix wins) remaps bind-mount paths for cross-host migrations |
 | POST | `/api/restore/verify` | `RestoreRequest` (only `backup_id` used) | `{"job_id": str}` | Start async verify job (checksum + manifest only) |
+
+### Deploy
+
+| Method | Path | Body | Purpose |
+|---|---|---|---|
+| GET | `/api/deploy/templates` | — | Template metadata (fields rendered as a form by the UI) |
+| POST | `/api/deploy/start` | `{template_id, config}` | Template deploy (job) + auto-backup on success |
+| POST | `/api/deploy/compose` | `{name, yaml_content}` | Compose YAML deploy (job) + auto-backup |
+| POST | `/api/deploy/dockerfile` | `DockerfileDeployRequest` | Build inline Dockerfile and run (job) + auto-backup |
 
 ### Jobs
 
@@ -260,7 +312,7 @@ Image name lowercased, tag stripped, basename extracted. Substring matched again
 
 ### Database dumps (`backup/databases.py`)
 
-All dumps use `docker exec` via subprocess (not the SDK). The `docker` CLI binary is available on the host socket path; since `/var/run/docker.sock` is mounted, the host's `docker` CLI is invoked via subprocess inside the container. Wait — actually the container has **no docker CLI**. Database dumps use `asyncio.create_subprocess_exec("docker", ...)` which resolves to the `docker` binary that must exist in `PATH`. Check: the Dockerfile does not install docker CLI. This means `dump_database` calls will fail unless `docker` is on PATH. **This is a known gap** — the database dump and restore functions call `docker exec`, `docker cp` via subprocess, which requires the docker CLI binary to be present. In practice this works only if the host's docker CLI is accessible through the socket somehow, or if a future image layer adds it. If database dumps are failing, install the docker CLI in the Dockerfile.
+All dumps and restores use the Docker Python SDK exclusively (`container.exec_run`, `put_archive`, `get_archive`) — there is **no docker CLI** in the image. See section 9 for the per-operation mapping.
 
 **MySQL/MariaDB**: `mysqldump -uroot -p{pass} --all-databases --single-transaction --routines --triggers --events` piped through `gzip -c` to `databases/mysql_{container}.sql.gz`. Root password read from `MYSQL_ROOT_PASSWORD` or `MARIADB_ROOT_PASSWORD`.
 
@@ -392,7 +444,7 @@ Labels added by comeback on every restored container:
 
 ### Database restore (`restore/databases.py`)
 
-All DB restores use `docker exec -i` / `docker cp` subprocesses. Same CLI dependency caveat as backup.
+All DB restores use the SDK (`put_archive` to upload the dump, `exec_run` to apply it). The `docker exec`/`docker cp` notation below describes the logical operations, executed via SDK equivalents.
 
 **MySQL/MariaDB**: `gunzip -c {dump.sql.gz}` piped into `docker exec -i {container} mysql -uroot -p{pass}`. 5-second sleep before restore to let MySQL start.
 
@@ -484,9 +536,9 @@ The Dockerfile installs `pigz gzip tar curl` but **not** the docker CLI. All ope
 
 Bind mount backup reads from `{HOST_ROOT}/{path}` (read access, using subprocess `tar`). Bind mount restore writes to `{HOST_ROOT}/{path}` (write access, using subprocess `tar xzf`). The docker-compose volume `- /:/host` provides this. Without it, all bind mounts are silently skipped on backup and will fail on restore.
 
-### Volume backup reads all bytes into memory
+### Volume backup/restore streams in chunks
 
-`backup_docker_volume` calls `client.containers.run(...)` which returns the full stdout bytes before writing to disk. For very large volumes this can exhaust container memory. The restore path similarly reads the full archive into memory before piping to stdin. For large volumes, consider streaming alternatives using the low-level API.
+`backup_docker_volume` attaches to an alpine helper via the low-level APIClient and streams tar stdout to disk in chunks; the restore path streams the archive from disk into the helper's stdin in 64 KB chunks. Neither direction holds the full archive in memory — multi-GB volumes are safe. Both check the helper's exit code and raise on tar failure.
 
 ### Volume name normalisation
 
@@ -509,9 +561,17 @@ Do **not** use `db_file.stem` here — `.stem` strips only one extension, so `mo
 
 `--workers 1` is intentional. The in-memory `JobManager` cannot be shared across multiple uvicorn workers. If multiple workers are needed, the job store must be moved to Redis or a database.
 
-### No authentication
+### Authentication
 
-There is no authentication layer. Access control is assumed to be handled by Cosmos Cloud (e.g. forward-auth, IP restriction) or network isolation.
+Single-user session auth (`app/auth.py`). Enabled when `AUTH_PASSWORD`, `AUTH_PASSWORD_HASH` or a UI-set password exist; otherwise the API is open (warning logged at startup). Password precedence: `/backups/.auth.json` (UI change, bcrypt) → `AUTH_PASSWORD_HASH` env (bcrypt) → `AUTH_PASSWORD` env (plain, constant-time compare). Sessions: in-memory token → expiry (24h sliding), HttpOnly SameSite=Lax cookie `comeback_session`; works for the WebSocket too (cookie validated before accept, close 4401). Brute force: 1s delay per failed login, IP locked 15 min after 5 failures (cleared on success). The HTTP middleware guards everything under `/api/` except `/api/auth/*`; the SPA and static files stay public. A server restart clears all sessions (in-memory).
+
+### Background scheduler
+
+`scheduler_loop()` (started on FastAPI startup) checks every 60s whether a schedule is due, interpreting `time` in the container TZ (tzdata installed in the image). Schedules persist in `/backups/.schedules.json`. A schedule created after today's slot waits for the next occurrence (`created_at` guard). Retention: after a successful run, archives whose manifest label equals `⏰ {name}` beyond the newest N are deleted. The in-memory JobManager persists finished jobs (with logs) to `/backups/.jobs/jobs.jsonl`, reloading the last 200 lazily.
+
+### Self-update limitation
+
+Comeback detects its own container (short id from `/etc/hostname` vs container id) and refuses to recreate itself — update/recreate actions on it only pull the new image; the user recreates from compose/ZimaOS.
 
 ---
 
@@ -521,7 +581,11 @@ There is no authentication layer. Access control is assumed to be handled by Cos
 |---|---|---|
 | `BACKUP_PATH` | `/backups` | Absolute path inside container where archives are stored |
 | `HOST_ROOT` | `/host` | Mount point of the host's root filesystem |
-| `TZ` | `Europe/Madrid` | Timezone for log timestamps |
+| `TZ` | `Europe/Madrid` | Timezone for log timestamps and the backup scheduler |
+| `AUTH_USERNAME` | `admin` | Login username |
+| `AUTH_PASSWORD` | *(empty)* | Plain login password; empty (and no hash) = API open |
+| `AUTH_PASSWORD_HASH` | *(empty)* | bcrypt hash, takes precedence over `AUTH_PASSWORD` |
+| `INSTANCE_NAME` | *(host hostname)* | Label shown on login/header/manifests; falls back to `/host/etc/hostname` |
 
 Loaded via `pydantic-settings` (`Settings` class in `app/config.py`). Can also be set via a `.env` file for local development.
 
@@ -531,38 +595,52 @@ Loaded via `pydantic-settings` (`Settings` class in `app/config.py`). Can also b
 
 ```
 comeback/
-  docker-compose.yml
+  docker-compose.yml       # dev compose: bind-mounts ./backend/app → /app/app (no rebuild for code changes)
+  zimaos/docker-compose.yml # ZimaOS/CasaOS install file with x-casaos metadata
+  .github/workflows/
+    ci.yml                 # pytest on every push/PR
+    docker-publish.yml     # multi-arch image to Docker Hub on tag v*
   backend/
-    Dockerfile
+    Dockerfile             # python:3.12-slim + pigz gzip tar curl tzdata
     requirements.txt
+    requirements-dev.txt   # + pytest, httpx
+    tests/                 # pytest suite (run via docker python:3.12-slim; Mac only has 3.9)
     app/
-      main.py              # FastAPI app, router registration, SPA catch-all
-      config.py            # Settings (BACKUP_PATH, HOST_ROOT, TZ)
+      main.py              # FastAPI app, auth middleware, routers, /api/system, scheduler startup, SPA catch-all
+      config.py            # Settings + APP_VERSION (bump on each release)
       models.py            # All Pydantic models and enums
-      job_manager.py       # In-memory Job and JobManager classes
+      auth.py              # Sessions, brute-force lockout, password change, /api/auth router
+      job_manager.py       # Job/JobManager + JSONL persistence of finished jobs
+      scheduler.py         # Scheduled backups: store, due logic, retention, loop
+      updates.py           # Update check (digests), run_update(_all), run_recreate, run_pull
+      host_stats.py        # Host CPU/RAM/disk/load/temp/net/IO from /host proc//sys
+      environment.py       # Deploy environment report (ports, bind roots, shared networks)
       docker_client.py     # Cached DockerClient and APIClient factories
       api/
-        containers.py      # GET /api/containers
-        backup.py          # GET/POST/DELETE /api/backups
+        containers.py      # GET list/sizes/{id}, POST {id}/action
+        backup.py          # GET/POST/DELETE /api/backups, POST upload
         restore.py         # POST /api/restore/start|verify
-        jobs.py            # GET /api/jobs, WS /api/jobs/{id}/ws
+        jobs.py            # GET /api/jobs, WS /api/jobs/{id}/ws (cookie-gated)
         cleanup.py         # GET/DELETE /api/cleanup/test
-      backup/
-        manager.py         # run_backup() orchestrator
-        containers.py      # get_container_info, export_container_spec, export_networks
-        volumes.py         # backup_docker_volume, backup_bind_mount, backup_all_volumes
-        databases.py       # dump_mysql, dump_postgres, dump_mongodb, dump_redis
-      restore/
-        manager.py         # run_restore() orchestrator, _build_run_kwargs
-        verify.py          # verify_backup() checksum + manifest check
-        volumes.py         # restore_docker_volume, restore_bind_mount
-        databases.py       # restore_mysql, restore_postgres, restore_mongodb, restore_redis
+        deploy.py          # templates/compose/dockerfile deploys, environment, auto-backup
+        schedules.py       # CRUD + run-now
+        stats.py           # /api/stats (containers) + /api/stats/host
+        updates.py         # /api/updates check/start/start-all
+      backup/              # run_backup orchestrator, spec export, volumes (streaming), db dumps
+      restore/             # run_restore, _build_run_kwargs, _remap_path, verify, volumes (streaming), db restores
+      deploy/
+        compose.py         # Compose/Dockerfile deploys, _pull_with_progress(force=)
+      templates/
+        base.py            # BaseTemplate + TemplateField
+        ente_photos.py     # Ente stack (SSD/HDD paths, TZ, hex jwt-secret)
+        official.py        # SingleContainerTemplate + Plex/Portainer/Grafana/Nextcloud
       static/
-        index.html         # SPA entry point
+        index.html         # SPA entry point (tabs, modals, login overlay, settings, host monitor)
         js/
-          api.js           # Fetch/WebSocket API client wrapper
-          app.js           # UI state, rendering, job modal, polling fallback
-        css/               # (assumed) styles
+          i18n.js          # ES/EN dictionary, t(), DOM translation + MutationObserver
+          api.js           # Fetch/WebSocket API client wrapper (401 → login overlay)
+          app.js           # UI state, rendering, cards, filters, job modal, polling fallback
+        css/style.css      # dark theme vars + [data-theme=light] overrides
 ```
 
 ---
