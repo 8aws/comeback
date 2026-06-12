@@ -35,6 +35,7 @@ const API = {
   containers: {
     list: () => API.get('/api/containers'),
     sizes: () => API.get('/api/containers/sizes'),
+    action: (id, action) => API.post(`/api/containers/${id}/action`, { action }),
   },
   backups: {
     list: () => API.get('/api/backups'),
@@ -48,6 +49,7 @@ const API = {
   },
   deploy: {
     templates: () => API.get('/api/deploy/templates'),
+    environment: () => API.get('/api/deploy/environment'),
     start: (body) => API.post('/api/deploy/start', body),
     compose: (body) => API.post('/api/deploy/compose', body),
     dockerfile: (body) => API.post('/api/deploy/dockerfile', body),

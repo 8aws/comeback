@@ -14,6 +14,14 @@ from ..deploy.compose import run_compose_deploy, run_dockerfile_deploy
 router = APIRouter(prefix="/api/deploy", tags=["deploy"])
 
 
+@router.get("/environment")
+async def deploy_environment() -> dict:
+    """Ports/paths/networks report to avoid conflicts before deploying."""
+    from ..environment import environment_report
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, environment_report)
+
+
 # ─── auto-backup helper ───────────────────────────────────────────────────────
 
 async def _trigger_auto_backup(container_names: list[str], label: str):

@@ -11,6 +11,7 @@ const state = {
   jobs: [],
   activeJobId: null,
   cardStats: {},     // id → {cpu_pct, mem_usage, mem_pct, net_rx, net_tx} for main-page cards
+  statsHistory: {},  // id → [{cpu, mem}] last samples for the card sparkline
 };
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -21,9 +22,10 @@ function navigate(tab) {
   if (tab === 'backup') { loadContainers(); loadSchedules(); }
   if (tab === 'restore') { loadBackups(); loadTestResources(); }
   if (tab === 'jobs') loadJobs();
-  if (tab === 'deploy') loadTemplates();
+  if (tab === 'deploy') { loadTemplates(); loadDeployEnv(); }
   if (tab === 'updates') loadUpdates();
   if (tab === 'monitor') loadMonitor(); else clearTimeout(_monitorTimer);
+  if (tab !== 'backup') clearTimeout(_cardStatsTimer);
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -225,13 +227,8 @@ async function loadContainers() {
       });
       if (changed && state.tab === 'backup') renderContainers();
     }).catch(() => {});
-    // Phase 3: live CPU/RAM/net metrics for the cards (background, best-effort)
-    if (monitoringEnabled()) {
-      API.stats.list().then(stats => {
-        state.cardStats = Object.fromEntries(stats.filter(s => !s.error).map(s => [s.id, s]));
-        if (state.tab === 'backup') renderContainers();
-      }).catch(() => {});
-    }
+    // Phase 3: live CPU/RAM/net metrics + sparkline history (background loop)
+    pollCardStats();
   } catch (e) {
     grid.innerHTML = `<div class="alert error">Failed to load containers: ${e.message}</div>`;
   }
@@ -264,6 +261,117 @@ function toggleFavorite(ev, name) {
   favs.has(name) ? favs.delete(name) : favs.add(name);
   viewPrefs.favorites = favs;
   renderContainers();
+}
+
+// ─── Card live stats polling (sparkline history) ────────────────────────────
+let _cardStatsTimer = null;
+const SPARK_POINTS = 24;
+
+async function pollCardStats() {
+  clearTimeout(_cardStatsTimer);
+  if (!monitoringEnabled() || state.tab !== 'backup') return;
+  try {
+    const stats = await API.stats.list();
+    state.cardStats = Object.fromEntries(stats.filter(s => !s.error).map(s => [s.id, s]));
+    stats.filter(s => !s.error).forEach(s => {
+      const h = state.statsHistory[s.id] = state.statsHistory[s.id] || [];
+      h.push({ cpu: s.cpu_pct || 0, mem: s.mem_pct || 0 });
+      if (h.length > SPARK_POINTS) h.shift();
+    });
+    if (state.tab === 'backup') renderContainers();
+  } catch (e) { /* stats are best-effort */ }
+  _cardStatsTimer = setTimeout(pollCardStats, 10000);
+}
+
+function _sparkline(id, width = 120, height = 26) {
+  const h = state.statsHistory[id];
+  if (!h || h.length < 2) return '';
+  const pts = (key, max) => h.map((p, i) =>
+    `${(i / (SPARK_POINTS - 1) * width).toFixed(1)},${(height - Math.min(p[key], max) / max * height).toFixed(1)}`
+  ).join(' ');
+  return `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"
+         style="display:block;background:var(--surface);border-radius:4px">
+      <polyline points="${pts('mem', 100)}" fill="none" stroke="var(--blue)" stroke-width="1.5"/>
+      <polyline points="${pts('cpu', 100)}" fill="none" stroke="var(--purple)" stroke-width="1.5"/>
+    </svg>`;
+}
+
+// ─── Container status & actions (Cosmos-style) ──────────────────────────────
+const STATUS_STYLES = {
+  running:    ['running',    'var(--success)'],
+  restarting: ['restarting', 'var(--warning)'],
+  paused:     ['paused',     'var(--yellow)'],
+  exited:     ['stopped',    'var(--error)'],
+  dead:       ['dead',       'var(--error)'],
+  created:    ['created',    'var(--text-muted)'],
+};
+
+function _statusBadge(c) {
+  const [label, color] = STATUS_STYLES[c.status] || [c.status, 'var(--text-muted)'];
+  return `<span style="background:${color};color:#fff;font-size:10px;font-weight:700;
+    padding:2px 8px;border-radius:10px;text-transform:uppercase;flex-shrink:0">${label}</span>`;
+}
+
+const CONTAINER_ACTIONS = {
+  pull:     { icon: '⬇',  title: 'Forzar pull de la imagen', confirm: false, job: true },
+  pause:    { icon: '⏸',  title: 'Pausar',                   confirm: false },
+  unpause:  { icon: '⏯',  title: 'Reanudar',                 confirm: false },
+  start:    { icon: '▶',  title: 'Arrancar',                 confirm: false },
+  stop:     { icon: '⏹',  title: 'Parar',                    confirm: true },
+  restart:  { icon: '🔄', title: 'Reiniciar',                confirm: true },
+  recreate: { icon: '♻️', title: 'Recrear (misma config)',   confirm: true, job: true },
+  kill:     { icon: '☠',  title: 'Kill (SIGKILL)',           confirm: true, danger: true },
+};
+
+function _actionsFor(c) {
+  if (c.status === 'running') return ['pull', 'pause', 'stop', 'restart', 'recreate', 'kill'];
+  if (c.status === 'paused') return ['unpause', 'stop', 'kill'];
+  if (c.status === 'restarting') return ['stop', 'recreate', 'kill'];
+  return ['start', 'pull', 'recreate'];   // exited / created / dead
+}
+
+function _actionBar(c) {
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
+    ${_actionsFor(c).map(a => {
+      const def = CONTAINER_ACTIONS[a];
+      return `<button class="btn btn-outline btn-sm" style="padding:2px 7px;font-size:12px;${def.danger ? 'color:var(--error);border-color:var(--error)' : ''}"
+        title="${t(def.title)}" onclick="containerAction('${c.id}', '${a}', '${escapeHtml(c.name)}')">${def.icon}</button>`;
+    }).join('')}
+  </div>`;
+}
+
+async function containerAction(id, action, name) {
+  const def = CONTAINER_ACTIONS[action];
+  if (def.confirm && !confirm(`${t(def.title)} — ${name}?`)) return;
+  try {
+    const r = await API.containers.action(id, action);
+    if (r.job_id) {
+      openJobModal(r.job_id, `${t(def.title)} — ${name}`);
+      window._scheduleJobPoll?.();
+    } else {
+      showToast(`${name}: ${action} OK`, 'success');
+      setTimeout(loadContainers, 800);   // give docker a moment, then refresh
+    }
+  } catch (e) {
+    showToast(`${name}: ${e.message}`, 'error');
+  }
+}
+
+function _portBadges(c) {
+  const out = [];
+  for (const [cport, bindings] of Object.entries(c.ports || {})) {
+    for (const b of bindings || []) {
+      if (b.HostPort) out.push(`${b.HostPort}:${cport.replace('/tcp', '')}`);
+    }
+  }
+  return [...new Set(out)].slice(0, 6)
+    .map(p => `<span class="badge" style="background:rgba(210,153,34,0.15);color:var(--yellow)">${escapeHtml(p)}</span>`).join('');
+}
+
+function _networkBadges(c) {
+  return (c.networks || []).filter(n => n !== 'bridge').slice(0, 4)
+    .map(n => `<span class="badge">${escapeHtml(n)}</span>`).join('');
 }
 
 // Exit codes from a voluntary docker stop/kill — not a crash:
@@ -308,7 +416,7 @@ function _containerItem(c) {
   const volCount = (c.volumes || []).length;
   const problem = _hasProblem(c);
   const verifiedProblem = _isVerifiedProblem(c);
-  const compact = viewPrefs.cols >= 4;
+  const cols = viewPrefs.cols;
   const liveStats = state.cardStats?.[c.id];
 
   const badges = [
@@ -323,47 +431,43 @@ function _containerItem(c) {
     ? `<span onclick="toggleVerified(event, '${escapeHtml(c.name)}')" title="${t('Marcar como verificado — se gestiona como contenedor normal')}"
         style="cursor:pointer;font-size:13px;opacity:0.6;flex-shrink:0">✔</span>`
     : '';
+  const favBtn = `<span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="${t('Favorito')}"
+    style="cursor:pointer;font-size:13px;opacity:${favs.has(c.name) ? 1 : 0.25};flex-shrink:0">⭐</span>`;
 
-  const statsHtml = liveStats && c.running ? `
-    <div class="card-stats text-muted" style="font-size:10.5px;display:flex;gap:10px;margin-top:2px">
-      <span>CPU ${liveStats.cpu_pct}%</span>
-      <span>RAM ${_fmtBytes(liveStats.mem_usage)} (${liveStats.mem_pct}%)</span>
+  const statsText = liveStats && c.running ? `
+    <div class="text-muted" style="font-size:10.5px;display:flex;gap:10px;flex-wrap:wrap">
+      <span style="color:var(--purple)">● CPU ${liveStats.cpu_pct}%</span>
+      <span style="color:var(--blue)">● RAM ${_fmtBytes(liveStats.mem_usage)} (${liveStats.mem_pct}%)</span>
       <span>↓${_fmtBytes(liveStats.net_rx)} ↑${_fmtBytes(liveStats.net_tx)}</span>
     </div>` : '';
+  const spark = c.running && cols <= 3 ? _sparkline(c.id, cols === 1 ? 220 : 140) : '';
+  const sparkRow = spark || statsText ? `
+    <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      ${statsText}${spark}
+    </div>` : '';
 
-  // 4 columns: stack everything vertically so text never overlaps
-  if (compact) {
-    return `
-    <div class="container-item compact ${sel ? 'selected' : ''} ${problem ? 'problem' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')"
-         style="flex-direction:column;align-items:stretch;gap:5px">
-      <div style="display:flex;align-items:center;gap:8px;min-width:0">
-        <div class="container-check"></div>
-        ${statusDot(c.running)}
-        <div class="container-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name)}</div>
-        ${verifyBtn}
-        <span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="${t('Favorito')}"
-          style="cursor:pointer;font-size:13px;opacity:${favs.has(c.name) ? 1 : 0.25};flex-shrink:0">⭐</span>
-      </div>
-      <div class="container-image text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.image)}</div>
-      ${badges ? `<div class="container-badges" style="display:flex;flex-wrap:wrap;gap:4px">${badges}</div>` : ''}
-      ${statsHtml}
-    </div>`;
-  }
+  const ports = cols <= 2 ? _portBadges(c) : '';
+  const nets = cols <= 2 ? _networkBadges(c) : '';
+  const portNetRow = (ports || nets) ? `
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${ports}${nets}</div>` : '';
 
+  // Card: header row → image → badges → actions → ports/nets → graph
   return `
-    <div class="container-item ${sel ? 'selected' : ''} ${problem ? 'problem' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')">
+  <div class="container-item ${sel ? 'selected' : ''} ${problem ? 'problem' : ''}" data-id="${c.id}" onclick="toggleContainer('${c.id}')"
+       style="flex-direction:column;align-items:stretch;gap:6px">
+    <div style="display:flex;align-items:center;gap:8px;min-width:0">
       <div class="container-check"></div>
-      ${statusDot(c.running)}
-      <div class="flex" style="flex:1;min-width:0;flex-direction:column">
-        <div class="container-name">${escapeHtml(c.name)}</div>
-        <div class="container-image text-muted text-sm">${escapeHtml(c.image)}</div>
-        ${statsHtml}
-      </div>
-      <div class="container-badges">${badges}</div>
+      ${_statusBadge(c)}
+      <div class="container-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name)}</div>
       ${verifyBtn}
-      <span onclick="toggleFavorite(event, '${escapeHtml(c.name)}')" title="${t('Favorito')}"
-        style="cursor:pointer;font-size:15px;opacity:${favs.has(c.name) ? 1 : 0.25};flex-shrink:0">⭐</span>
-    </div>`;
+      ${favBtn}
+    </div>
+    <div class="container-image text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.image)}</div>
+    ${badges ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${badges}</div>` : ''}
+    ${cols <= 3 ? _actionBar(c) : ''}
+    ${portNetRow}
+    ${sparkRow}
+  </div>`;
 }
 
 function _accordionGroup(key, title, items, alwaysOpen = false) {
@@ -820,6 +924,82 @@ async function startRestore() {
     window._scheduleJobPoll?.();
   } catch (e) {
     showToast(`Restore error: ${e.message}`, 'error');
+  }
+}
+
+// ─── DEPLOY TAB: server environment ──────────────────────────────────────────
+let _deployEnv = null;
+
+function _condenseRanges(ports) {
+  // [80,81,82,443,8080] → "80-82, 443, 8080"
+  if (!ports.length) return '';
+  const out = [];
+  let start = ports[0], prev = ports[0];
+  for (let i = 1; i <= ports.length; i++) {
+    const p = ports[i];
+    if (p === prev + 1) { prev = p; continue; }
+    out.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = prev = p;
+  }
+  return out.join(', ');
+}
+
+async function loadDeployEnv() {
+  const box = document.getElementById('deploy-env');
+  box.innerHTML = `<span class="text-muted text-sm">${t('Cargando entorno…')}</span>`;
+  try {
+    _deployEnv = await API.deploy.environment();
+    const e = _deployEnv;
+    const sections = [];
+
+    sections.push(`
+      <div style="margin-bottom:10px">
+        <strong style="font-size:12px">🔌 ${t('Puertos ocupados')}</strong>
+        <span class="text-muted text-sm">(${e.used_ports.length})</span>
+        <div class="text-sm" style="margin-top:4px;word-break:break-all;font-family:monospace;font-size:11.5px">
+          ${escapeHtml(_condenseRanges(e.used_ports)) || t('ninguno')}
+        </div>
+      </div>`);
+
+    if (e.bind_roots?.length) {
+      sections.push(`
+      <div style="margin-bottom:10px">
+        <strong style="font-size:12px">📁 ${t('Rutas de datos usadas por otros contenedores')}</strong>
+        <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+          ${e.bind_roots.map(r => `<span class="badge" style="font-family:monospace">${escapeHtml(r.path)} <span class="text-muted">×${r.count}</span></span>`).join('')}
+        </div>
+      </div>`);
+    }
+
+    if (e.common_networks?.length) {
+      sections.push(`
+      <div>
+        <strong style="font-size:12px">🌐 ${t('Redes compartidas')}</strong>
+        <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+          ${e.common_networks.map(n => `<span class="badge">${escapeHtml(n.name)} <span class="text-muted">×${n.count}</span></span>`).join('')}
+        </div>
+      </div>`);
+    }
+
+    box.innerHTML = sections.join('');
+  } catch (err) {
+    box.innerHTML = `<div class="alert error">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function checkPort() {
+  const input = document.getElementById('port-check-input');
+  const result = document.getElementById('port-check-result');
+  const port = parseInt(input.value, 10);
+  if (!port || port < 1 || port > 65535) { result.textContent = ''; return; }
+  if (!_deployEnv) { result.textContent = '…'; return; }
+  const inDocker = _deployEnv.docker_ports.includes(port);
+  const onHost = _deployEnv.host_ports.includes(port);
+  if (inDocker || onHost) {
+    const who = inDocker ? 'Docker' : t('un proceso del host');
+    result.innerHTML = `<span style="color:var(--error)">✕ ${port} ${t('ocupado por')} ${who}</span>`;
+  } else {
+    result.innerHTML = `<span style="color:var(--success)">✓ ${port} ${t('disponible')}</span>`;
   }
 }
 

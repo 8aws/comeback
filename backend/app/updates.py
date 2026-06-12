@@ -213,6 +213,76 @@ async def _update_one(job: Job, container_id: str, backup_first: bool) -> dict:
     return {"container": name, "image": image_ref, "updated": True}
 
 
+async def run_recreate(job: Job, container_id: str):
+    """Recreate a container with its current image and exact configuration."""
+    job.started_at = datetime.utcnow()
+    job.status = JobStatus.running
+    client = get_docker()
+    loop = asyncio.get_event_loop()
+    try:
+        container = await loop.run_in_executor(
+            None, lambda: client.containers.get(container_id))
+        name = container.name
+
+        self_id = _self_container_id()
+        if self_id and container.id.startswith(self_id):
+            raise RuntimeError("Comeback no puede recrearse a sí mismo")
+
+        await job.set_progress(20, f"Capturando configuración de {name}…")
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = export_container_spec(container.id, Path(tmp))
+
+        was_running = container.status == "running"
+        await job.set_progress(50, f"Recreando {name}…")
+        await job.log(LogLevel.info, f"Parando y eliminando {name} (volúmenes intactos)")
+        await loop.run_in_executor(None, lambda: container.stop(timeout=10))
+        await loop.run_in_executor(None, container.remove)
+
+        kwargs, networks = _build_run_kwargs(spec)
+        new_c = await loop.run_in_executor(
+            None, lambda: client.containers.create(**kwargs))
+        for net_name in networks[1:]:
+            try:
+                net = client.networks.get(net_name)
+                await loop.run_in_executor(None, lambda: net.connect(new_c))
+            except Exception as e:
+                await job.log(LogLevel.warning, f"Red {net_name}: {e}")
+        if was_running:
+            await loop.run_in_executor(None, new_c.start)
+            if not await _quick_health_check(client, name, job):
+                raise RuntimeError("El contenedor recreado no arranca")
+
+        await job.set_progress(100, "Recreación completada")
+        await job.log(LogLevel.success, f"{name} recreado")
+        await job.finish(JobStatus.success, {"container": name, "recreated": True})
+    except Exception as e:
+        await job.log(LogLevel.error, f"Recreación fallida: {e}")
+        await job.finish(JobStatus.failed, {"error": str(e)})
+
+
+async def run_pull(job: Job, container_id: str):
+    """Force-pull the image of a container (no recreation)."""
+    job.started_at = datetime.utcnow()
+    job.status = JobStatus.running
+    client = get_docker()
+    loop = asyncio.get_event_loop()
+    try:
+        container = await loop.run_in_executor(
+            None, lambda: client.containers.get(container_id))
+        image_ref = container.attrs["Config"]["Image"]
+        if "@sha256:" in image_ref:
+            raise RuntimeError("Imagen fijada por digest — no hay tag que actualizar")
+        await job.set_progress(20, f"Descargando {image_ref}…")
+        await _pull_with_progress(client, image_ref, job, force=True)
+        await job.set_progress(100, "Pull completado")
+        await job.log(LogLevel.success,
+                      f"Imagen {image_ref} descargada — usa Recrear para aplicarla")
+        await job.finish(JobStatus.success, {"pulled": image_ref})
+    except Exception as e:
+        await job.log(LogLevel.error, f"Pull fallido: {e}")
+        await job.finish(JobStatus.failed, {"error": str(e)})
+
+
 async def run_update(job: Job, container_id: str, backup_first: bool):
     job.started_at = datetime.utcnow()
     job.status = JobStatus.running

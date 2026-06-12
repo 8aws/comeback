@@ -192,6 +192,24 @@
     <div id="tab-deploy" class="tab-panel">
       <div style="display:grid;gap:20px">
 
+        <!-- Entorno del servidor -->
+        <div class="card">
+          <div class="card-header">
+            <h2>🧭 Entorno del servidor</h2>
+            <button class="btn btn-outline btn-sm" onclick="loadDeployEnv()">↻</button>
+          </div>
+          <div class="card-body">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+              <input id="port-check-input" type="number" min="1" max="65535" placeholder="Comprobar puerto…"
+                onkeydown="if(event.key==='Enter')checkPort()"
+                style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px">
+              <button class="btn btn-outline btn-sm" onclick="checkPort()">🔍 Comprobar</button>
+              <span id="port-check-result" style="font-size:13px"></span>
+            </div>
+            <div id="deploy-env" class="text-muted text-sm">Cargando entorno…</div>
+          </div>
+        </div>
+
         <!-- Plantillas -->
         <div class="card">
           <div class="card-header">

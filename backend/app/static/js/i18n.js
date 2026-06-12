@@ -135,6 +135,30 @@ const I18N = {
   '🚪 Cerrar sesión': ['🚪 Cerrar sesión', '🚪 Log out'],
   'Las contraseñas nuevas no coinciden': ['Las contraseñas nuevas no coinciden', 'New passwords do not match'],
 
+  // container actions
+  'Forzar pull de la imagen': ['Forzar pull de la imagen', 'Force image pull'],
+  'Pausar': ['Pausar', 'Pause'],
+  'Reanudar': ['Reanudar', 'Resume'],
+  'Arrancar': ['Arrancar', 'Start'],
+  'Parar': ['Parar', 'Stop'],
+  'Reiniciar': ['Reiniciar', 'Restart'],
+  'Recrear (misma config)': ['Recrear (misma config)', 'Recreate (same config)'],
+  'Kill (SIGKILL)': ['Kill (SIGKILL)', 'Kill (SIGKILL)'],
+
+  // deploy environment
+  '🧭 Entorno del servidor': ['🧭 Entorno del servidor', '🧭 Server environment'],
+  'Cargando entorno…': ['Cargando entorno…', 'Loading environment…'],
+  'Comprobar puerto…': ['Comprobar puerto…', 'Check port…'],
+  '🔍 Comprobar': ['🔍 Comprobar', '🔍 Check'],
+  'Puertos ocupados': ['Puertos ocupados', 'Ports in use'],
+  'ninguno': ['ninguno', 'none'],
+  'Rutas de datos usadas por otros contenedores': ['Rutas de datos usadas por otros contenedores', 'Data paths used by other containers'],
+  'Redes compartidas': ['Redes compartidas', 'Shared networks'],
+  'ocupado por': ['ocupado por', 'in use by'],
+  'un proceso del host': ['un proceso del host', 'a host process'],
+  'disponible': ['disponible', 'available'],
+  '🚀 Plantillas de despliegue': ['🚀 Plantillas de despliegue', '🚀 Deploy templates'],
+
   // login
   'Entrar': ['Entrar', 'Sign in'],
   'Usuario': ['Usuario', 'Username'],
