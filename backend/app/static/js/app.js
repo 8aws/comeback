@@ -22,7 +22,7 @@ function navigate(tab) {
   if (tab === 'backup') { loadContainers(); loadSchedules(); }
   if (tab === 'restore') { loadBackups(); loadTestResources(); }
   if (tab === 'jobs') loadJobs();
-  if (tab === 'deploy') { loadTemplates(); loadDeployEnv(); }
+  if (tab === 'deploy') { loadTemplates(); loadDeployEnv(); applyDeployCard('templates'); applyDeployCard('custom'); }
   if (tab === 'updates') loadUpdates();
   if (tab === 'monitor') loadMonitor(); else clearTimeout(_monitorTimer);
   if (tab !== 'backup') clearTimeout(_cardStatsTimer);
@@ -1124,10 +1124,29 @@ function switchCustomTab(tab) {
     : 'background:transparent;color:var(--text);border:1px solid var(--border)';
 }
 
+// ─── Deploy cards collapse ──────────────────────────────────────────────────
+function applyDeployCard(key) {
+  const body = document.getElementById(`deploy-body-${key}`);
+  const chevron = document.querySelector(`.deploy-chevron[data-card="${key}"]`);
+  const collapsed = viewPrefs.isCollapsed(`deploy_${key}`);
+  if (body) body.style.display = collapsed ? 'none' : '';
+  if (chevron) chevron.textContent = collapsed ? '▶' : '▼';
+}
+
+function toggleDeployCard(key, ev) {
+  if (ev) ev.stopPropagation();
+  viewPrefs.setCollapsed(`deploy_${key}`, !viewPrefs.isCollapsed(`deploy_${key}`));
+  applyDeployCard(key);
+}
+
 // ─── MelodY (visual compose generator) ──────────────────────────────────────
 function openMelody() {
   const frame = document.getElementById('melody-frame');
-  if (!frame.src) frame.src = '/static/melody.html';
+  // .src property resolves src="" to the page URL (never falsy) — use a flag
+  if (frame.dataset.loaded !== '1') {
+    frame.src = '/static/melody.html';
+    frame.dataset.loaded = '1';
+  }
   document.getElementById('melody-modal').style.display = 'flex';
 }
 

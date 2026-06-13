@@ -3,7 +3,7 @@ import socket
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.10.1"
 
 
 class Settings(BaseSettings):

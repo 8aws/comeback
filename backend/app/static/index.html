@@ -212,11 +212,11 @@
 
         <!-- Plantillas -->
         <div class="card">
-          <div class="card-header">
-            <h2>🚀 Plantillas de despliegue</h2>
-            <button class="btn btn-outline btn-sm" onclick="loadTemplates()">↻ Refresh</button>
+          <div class="card-header" style="cursor:pointer" onclick="toggleDeployCard('templates', event)">
+            <h2><span class="deploy-chevron" data-card="templates">▼</span> 🚀 Plantillas de despliegue</h2>
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();loadTemplates()">↻ Refresh</button>
           </div>
-          <div class="card-body">
+          <div class="card-body" id="deploy-body-templates">
             <div class="alert info" style="margin-bottom:20px">
               ℹ️ Stacks preconfigurados. Tras el deploy se genera automáticamente una copia de seguridad.
             </div>
@@ -226,16 +226,16 @@
 
         <!-- Despliegue personalizado -->
         <div class="card">
-          <div class="card-header">
-            <h2>🛠 Despliegue personalizado</h2>
-            <div style="display:flex;gap:8px">
+          <div class="card-header" style="cursor:pointer" onclick="toggleDeployCard('custom', event)">
+            <h2><span class="deploy-chevron" data-card="custom">▼</span> 🛠 Despliegue personalizado</h2>
+            <div style="display:flex;gap:8px" onclick="event.stopPropagation()">
               <button class="btn btn-sm btn-outline" onclick="openMelody()" title="Generador visual de Compose">🎹 MelodY</button>
               <button class="btn btn-sm" id="custom-tab-compose" onclick="switchCustomTab('compose')"
                 style="background:var(--blue);color:white">📄 Docker Compose</button>
               <button class="btn btn-outline btn-sm" id="custom-tab-dockerfile" onclick="switchCustomTab('dockerfile')">🐳 Dockerfile</button>
             </div>
           </div>
-          <div class="card-body">
+          <div class="card-body" id="deploy-body-custom">
             <div class="alert info" style="margin-bottom:16px">
               ℹ️ Pega un <strong>docker-compose.yml</strong> o un <strong>Dockerfile</strong> para desplegar cualquier stack. Se creará un backup automático tras el deploy.
             </div>
@@ -542,7 +542,7 @@
       <h3>🎹 MelodY — Generador visual de Compose</h3>
       <button class="modal-close" onclick="closeMelody()">×</button>
     </div>
-    <iframe id="melody-frame" src="" title="MelodY"
+    <iframe id="melody-frame" title="MelodY"
       style="flex:1;width:100%;border:none;border-radius:0 0 var(--radius) var(--radius)"></iframe>
   </div>
 </div>
