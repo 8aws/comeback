@@ -56,6 +56,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 /* ── SERVICE GRID ── */
 .svc-area{flex:1;overflow-y:auto;padding:10px}
 .svc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.svc-grid.cols1{grid-template-columns:1fr}
 .svc-section-label{grid-column:1/-1;font-size:10px;font-weight:600;color:var(--txm);text-transform:uppercase;letter-spacing:.5px;padding:4px 2px 2px;margin-top:4px}
 .svc-section-label:first-child{margin-top:0}
 
@@ -190,8 +191,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 
 <div class="layout">
   <div class="left">
-    <div class="search-wrap">
-      <input class="search-inp" id="searchInp" type="text" placeholder="Buscar servicio…" oninput="onSearch()">
+    <div class="search-wrap" style="display:flex;gap:6px;align-items:center">
+      <input class="search-inp" id="searchInp" type="text" placeholder="Buscar servicio…" oninput="onSearch()" style="flex:1">
+      <button class="btn btn-g" id="colToggle" onclick="toggleCols()" title="Columnas" style="padding:5px 9px;flex-shrink:0">▦ 2</button>
     </div>
     <div class="panel-mid">
       <nav class="cat-nav" id="catNav"></nav>
@@ -1212,6 +1214,23 @@ function toast(msg){
 }
 
 // ═══════════════════════════════════════════════════════════
+// COLUMNAS de la rejilla de servicios (1 / 2) — recordado
+// ═══════════════════════════════════════════════════════════
+function applyCols(){
+  // 1 columna por defecto (el panel de 420px estrecha demasiado a 2 cols);
+  // 2 solo si se elige explícitamente
+  const one = localStorage.getItem('melody_cols')!=='2';
+  const grid=document.getElementById('svcGrid');
+  if(grid) grid.classList.toggle('cols1', one);
+  const b=document.getElementById('colToggle');
+  if(b) b.textContent = one ? '▥ 1' : '▦ 2';
+}
+function toggleCols(){
+  localStorage.setItem('melody_cols', localStorage.getItem('melody_cols')==='2' ? '1' : '2');
+  applyCols();
+}
+
+// ═══════════════════════════════════════════════════════════
 // PUENTE comeback — solo cuando MelodY corre embebido en un iframe
 // ═══════════════════════════════════════════════════════════
 const EMBEDDED = window.parent && window.parent !== window;
@@ -1240,6 +1259,7 @@ buildCategoryNav();
 renderServiceGrid();
 updateChips();
 render();
+applyCols();
 </script>
 </body>
 </html>
