@@ -45,6 +45,8 @@ Single uvicorn worker (`--workers 1`), started with `--proxy-headers --forwarded
 
 Vanilla JS SPA served as static files from `app/static/`. FastAPI serves `index.html` for every non-API, non-static route (including HEAD) via a catch-all `/{path:path}` handler. There is no build step; JS/CSS are plain files.
 
+**MelodY integration**: `static/melody.html` is a self-contained visual Docker Compose generator (vendored copy from the MelodY project, ~83 KB, no external deps). The Deploy tab opens it in an iframe modal (`openMelody()`). When run embedded, MelodY shows a "🚀 Desplegar en comeback" button that `postMessage`s `{type:'melody-deploy', name, yaml, env}` to the parent. The SPA listener (origin-checked) inlines any `${VAR}` using MelodY's `.env` text (comeback's compose deploy has no separate `.env`), fills the compose panel and calls `startComposeDeploy()`. To update MelodY, re-copy the file and re-add the bridge block (button + `EMBEDDED` postMessage at the end of its `<script>`).
+
 ### Python dependencies
 
 | Package | Version | Purpose |
@@ -636,6 +638,7 @@ comeback/
         official.py        # SingleContainerTemplate + Plex/Portainer/Grafana/Nextcloud
       static/
         index.html         # SPA entry point (tabs, modals, login overlay, settings, host monitor)
+        melody.html        # MelodY visual Compose generator (self-contained; iframe in Deploy)
         js/
           i18n.js          # ES/EN dictionary, t(), DOM translation + MutationObserver
           api.js           # Fetch/WebSocket API client wrapper (401 → login overlay)

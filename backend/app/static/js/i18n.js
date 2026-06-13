@@ -158,6 +158,7 @@ const I18N = {
   'un proceso del host': ['un proceso del host', 'a host process'],
   'disponible': ['disponible', 'available'],
   '🚀 Plantillas de despliegue': ['🚀 Plantillas de despliegue', '🚀 Deploy templates'],
+  '🎹 MelodY — Generador visual de Compose': ['🎹 MelodY — Generador visual de Compose', '🎹 MelodY — Visual Compose generator'],
 
   // login
   'Entrar': ['Entrar', 'Sign in'],

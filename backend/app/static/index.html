@@ -229,6 +229,7 @@
           <div class="card-header">
             <h2>🛠 Despliegue personalizado</h2>
             <div style="display:flex;gap:8px">
+              <button class="btn btn-sm btn-outline" onclick="openMelody()" title="Generador visual de Compose">🎹 MelodY</button>
               <button class="btn btn-sm" id="custom-tab-compose" onclick="switchCustomTab('compose')"
                 style="background:var(--blue);color:white">📄 Docker Compose</button>
               <button class="btn btn-outline btn-sm" id="custom-tab-dockerfile" onclick="switchCustomTab('dockerfile')">🐳 Dockerfile</button>
@@ -531,6 +532,18 @@
       <button class="btn btn-outline" onclick="closeDeployModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="startDeploy()">🚀 Desplegar</button>
     </div>
+  </div>
+</div>
+
+<!-- MelodY generator modal -->
+<div id="melody-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:96vw;width:1400px;height:90vh;display:flex;flex-direction:column;padding:0">
+    <div class="modal-header" style="padding:12px 16px">
+      <h3>🎹 MelodY — Generador visual de Compose</h3>
+      <button class="modal-close" onclick="closeMelody()">×</button>
+    </div>
+    <iframe id="melody-frame" src="" title="MelodY"
+      style="flex:1;width:100%;border:none;border-radius:0 0 var(--radius) var(--radius)"></iframe>
   </div>
 </div>
 

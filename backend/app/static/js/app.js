@@ -1124,6 +1124,46 @@ function switchCustomTab(tab) {
     : 'background:transparent;color:var(--text);border:1px solid var(--border)';
 }
 
+// ─── MelodY (visual compose generator) ──────────────────────────────────────
+function openMelody() {
+  const frame = document.getElementById('melody-frame');
+  if (!frame.src) frame.src = '/static/melody.html';
+  document.getElementById('melody-modal').style.display = 'flex';
+}
+
+function closeMelody() {
+  document.getElementById('melody-modal').style.display = 'none';
+}
+
+// Inline ${VAR}/$VAR using MelodY's .env text — comeback's compose deploy has
+// no separate .env, so unresolved refs would land literally in the container
+function _inlineEnv(yaml, envText) {
+  if (!envText) return yaml;
+  const vars = {};
+  for (const line of envText.split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (m) vars[m[1]] = m[2];
+  }
+  return yaml.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+    (full, a, b) => { const k = a || b; return k in vars ? vars[k] : full; });
+}
+
+// MelodY posts the generated stack here when its "Desplegar en comeback" is used
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== window.location.origin) return;   // MelodY is same-origin
+  const msg = ev.data;
+  if (!msg || msg.type !== 'melody-deploy') return;
+  closeMelody();
+  // Fill the compose panel (keeps the YAML visible/editable if deploy fails)
+  switchCustomTab('compose');
+  const name = (msg.name || 'melody-stack').trim();
+  const yaml = _inlineEnv(msg.yaml || '', msg.env || '');
+  document.getElementById('compose-name').value = name;
+  document.getElementById('compose-yaml').value = yaml;
+  document.querySelector('[data-tab="deploy"]')?.scrollIntoView?.();
+  if (yaml) startComposeDeploy();
+});
+
 async function startComposeDeploy() {
   const name  = document.getElementById('compose-name').value.trim();
   const yaml  = document.getElementById('compose-yaml').value.trim();

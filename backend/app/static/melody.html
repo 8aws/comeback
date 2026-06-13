@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐳 MelodY · Docker Compose Generator</title>
+<style>
+:root{
+  --p:#0db7ed;--ph:#0aa3d4;--pd:rgba(13,183,237,.12);
+  --bg:#0f1117;--bgp:#141821;--bgc:#181d2a;--bga:#1c2133;--bgi:#0d1117;
+  --br:#222740;--bra:#0db7ed;
+  --tx:#e2e8f0;--txm:#5a6480;--txd:#8892a4;
+  --ok:#10b981;--wa:#f59e0b;--er:#ef4444;
+  --ls:#f97316;--bi:#10b981;--tr:#8b5cf6;--go:#ef4444;
+  --yk:#7dd3fc;--ys:#86efac;--yn:#fbbf24;--yb:#c084fc;--yc:#4b5563;--yd:#64748b;
+  --r:8px;--rs:5px;--t:.17s ease;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:14px;line-height:1.5;overflow:hidden}
+
+/* ── HEADER ── */
+.hdr{background:var(--bgp);border-bottom:1px solid var(--br);padding:11px 20px;display:flex;align-items:center;gap:16px;height:58px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.logo-icon{font-size:22px}
+.logo h1{font-size:16px;font-weight:700;color:var(--p);letter-spacing:-.3px}
+.logo sub{font-size:10px;color:var(--txm);font-weight:400;letter-spacing:.3px;display:block;margin-top:-2px}
+.hdr-sep{width:1px;height:24px;background:var(--br)}
+.hdr-field{display:flex;align-items:center;gap:7px}
+.hdr-field label{font-size:11px;color:var(--txm);white-space:nowrap}
+.hdr-inp{background:var(--bgi);border:1px solid var(--br);border-radius:var(--rs);color:var(--tx);padding:4px 9px;font-size:13px;transition:border-color var(--t)}
+.hdr-inp:focus{outline:none;border-color:var(--p)}
+.env-toggle{display:flex;align-items:center;gap:7px;margin-left:auto;cursor:pointer;user-select:none}
+.env-toggle label{font-size:12px;color:var(--txd);cursor:pointer}
+.env-badge{font-size:10px;padding:2px 7px;border-radius:20px;background:var(--pd);color:var(--p);font-weight:600;display:none}
+.env-badge.on{display:inline-block}
+
+/* ── LAYOUT ── */
+.layout{display:grid;grid-template-columns:420px 1fr;height:calc(100vh - 58px)}
+
+/* ── LEFT PANEL ── */
+.left{display:flex;flex-direction:column;background:var(--bgp);border-right:1px solid var(--br);overflow:hidden}
+.search-wrap{padding:10px 12px;flex-shrink:0;border-bottom:1px solid var(--br)}
+.search-inp{width:100%;background:var(--bgi);border:1px solid var(--br);border-radius:var(--rs);color:var(--tx);padding:6px 10px 6px 32px;font-size:13px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235a6480' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:9px center;transition:border-color var(--t)}
+.search-inp:focus{outline:none;border-color:var(--p)}
+.panel-mid{display:flex;flex:1;overflow:hidden}
+
+/* ── CATEGORY SIDEBAR ── */
+.cat-nav{width:82px;flex-shrink:0;overflow-y:auto;background:var(--bg);border-right:1px solid var(--br);padding:6px 0}
+.cat-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px;cursor:pointer;transition:all var(--t);border-left:2px solid transparent;color:var(--txm)}
+.cat-item:hover{background:var(--bgc);color:var(--txd)}
+.cat-item.active{background:var(--bgc);color:var(--p);border-left-color:var(--p)}
+.cat-icon{font-size:18px;line-height:1}
+.cat-label{font-size:9.5px;font-weight:600;text-align:center;letter-spacing:.2px}
+.cat-count{font-size:9px;background:var(--p);color:#000;border-radius:10px;padding:0 5px;font-weight:700;min-width:16px;text-align:center}
+
+/* ── SERVICE GRID ── */
+.svc-area{flex:1;overflow-y:auto;padding:10px}
+.svc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.svc-section-label{grid-column:1/-1;font-size:10px;font-weight:600;color:var(--txm);text-transform:uppercase;letter-spacing:.5px;padding:4px 2px 2px;margin-top:4px}
+.svc-section-label:first-child{margin-top:0}
+
+/* ── SERVICE CARD ── */
+.svc-card{background:var(--bgc);border:1.5px solid var(--br);border-radius:var(--r);overflow:hidden;transition:border-color var(--t);cursor:default}
+.svc-card.on{border-color:var(--p);background:var(--bga)}
+.svc-card.expanded{grid-column:1/-1}
+.svc-hdr{display:flex;align-items:center;gap:8px;padding:9px 10px;cursor:pointer;user-select:none}
+.svc-hdr:hover{background:rgba(255,255,255,.03)}
+.svc-icon{font-size:17px;width:22px;text-align:center;flex-shrink:0}
+.svc-info{flex:1;min-width:0}
+.svc-name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.svc-img{font-size:10px;color:var(--txm);font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;flex-shrink:0}
+.badge-of{background:rgba(13,183,237,.15);color:var(--p)}
+.badge-ls{background:rgba(249,115,22,.15);color:var(--ls)}
+.badge-bi{background:rgba(16,185,129,.15);color:var(--bi)}
+.badge-tr{background:rgba(139,92,246,.15);color:var(--tr)}
+.badge-go{background:rgba(239,68,68,.15);color:var(--go)}
+
+/* ── TOGGLE ── */
+.tog{position:relative;width:32px;height:18px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tsl{position:absolute;inset:0;background:var(--br);border-radius:20px;cursor:pointer;transition:background var(--t)}
+.tsl::before{content:'';position:absolute;width:12px;height:12px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform var(--t)}
+.tog input:checked+.tsl{background:var(--p)}
+.tog input:checked+.tsl::before{transform:translateX(14px)}
+
+/* ── SERVICE CONFIG ── */
+.svc-cfg{display:none;padding:0 10px 10px;flex-direction:column;gap:8px;border-top:1px solid var(--br);padding-top:10px}
+.svc-cfg.open{display:flex}
+.svc-info-box{display:flex;gap:7px;padding:7px 9px;background:rgba(13,183,237,.06);border:1px solid rgba(13,183,237,.18);border-radius:var(--rs);font-size:11px;color:var(--txd);line-height:1.5}
+.svc-warn-box{display:flex;gap:7px;padding:7px 9px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:var(--rs);font-size:11px;color:#fbbf24;line-height:1.5}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.field{display:flex;flex-direction:column;gap:3px}
+.field.full{grid-column:1/-1}
+.field label{font-size:10.5px;color:var(--txm);font-weight:500}
+.field input,.field select{background:var(--bgi);border:1px solid var(--br);border-radius:var(--rs);color:var(--tx);padding:5px 8px;font-size:12.5px;font-family:inherit;width:100%;transition:border-color var(--t)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--p)}
+.field select option{background:var(--bgc)}
+
+/* ── CHIPS BAR ── */
+.chips-bar{flex-shrink:0;border-top:1px solid var(--br);padding:7px 12px;display:flex;align-items:center;gap:8px;min-height:38px;background:var(--bg)}
+.chips-label{font-size:10.5px;color:var(--txm);white-space:nowrap;font-weight:500}
+.chips-list{display:flex;flex-wrap:wrap;gap:5px;flex:1}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--pd);border:1px solid rgba(13,183,237,.3);border-radius:20px;padding:2px 8px;font-size:11px;color:var(--p);font-weight:500}
+.chip-x{cursor:pointer;opacity:.6;font-size:13px;line-height:1}
+.chip-x:hover{opacity:1}
+.chip-warn{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3);color:#fbbf24}
+.btn-clear{font-size:10.5px;color:var(--txm);background:none;border:1px solid var(--br);border-radius:var(--rs);padding:2px 8px;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all var(--t)}
+.btn-clear:hover{border-color:var(--er);color:var(--er)}
+
+/* ── RIGHT PANEL ── */
+.right{display:flex;flex-direction:column;overflow:hidden}
+.yaml-hdr{display:flex;align-items:center;gap:0;padding:0 16px 0 0;background:var(--bgc);border-bottom:1px solid var(--br);flex-shrink:0;height:44px}
+.ytabs{display:flex;height:100%}
+.ytab{padding:0 16px;font-size:12.5px;color:var(--txm);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;font-weight:500;transition:all var(--t);height:100%}
+.ytab:hover{color:var(--txd)}
+.ytab.active{color:var(--p);border-bottom-color:var(--p)}
+.yaml-acts{display:flex;gap:8px;margin-left:auto}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:var(--rs);font-size:12px;font-weight:500;cursor:pointer;transition:all var(--t);border:1px solid transparent;font-family:inherit}
+.btn-p{background:var(--p);color:#000;border-color:var(--p)}
+.btn-p:hover{background:var(--ph)}
+.btn-g{background:transparent;color:var(--txd);border-color:var(--br)}
+.btn-g:hover{background:var(--bga);color:var(--tx);border-color:var(--bra)}
+
+/* ── YAML PREVIEW ── */
+.yaml-wrap{flex:1;overflow:auto;background:#0d1117}
+.yaml-pre{font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:12.5px;line-height:1.75;padding:16px 0;min-height:100%;white-space:pre}
+.yl{display:flex}
+.yln{color:#2a3040;text-align:right;padding:0 14px;min-width:40px;user-select:none;flex-shrink:0}
+.ylc{flex:1;padding-right:16px;white-space:pre}
+.yaml-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--txm);text-align:center;padding:40px}
+.yaml-empty-i{font-size:42px}
+.yaml-empty-t{font-size:15px;font-weight:600;color:var(--txd)}
+.yaml-empty-s{font-size:12px;line-height:1.7}
+
+/* ── YAML COLORS ── */
+.yk{color:var(--yk)}.ys{color:var(--ys)}.yn2{color:var(--yn)}.yb2{color:var(--yb)}.yco{color:var(--yc);font-style:italic}.ydd{color:var(--yd)}
+
+/* ── EMPTY CATEGORY ── */
+.cat-empty{grid-column:1/-1;text-align:center;padding:30px 10px;color:var(--txm);font-size:13px}
+
+/* ── SCROLLBARS ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--br);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--txm)}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:20px;right:20px;padding:9px 16px;background:var(--ok);color:#000;border-radius:var(--rs);font-weight:600;font-size:13px;opacity:0;transform:translateY(6px);transition:all .3s;z-index:1000;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+/* ── SEARCH RESULTS LABEL ── */
+.search-label{grid-column:1/-1;font-size:11px;color:var(--txm);padding:2px 2px 4px;font-style:italic}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="logo">
+    <span class="logo-icon">🐳</span>
+    <div>
+      <h1>MelodY</h1>
+      <sub>Docker Compose Generator</sub>
+    </div>
+  </div>
+  <div class="hdr-sep"></div>
+  <div class="hdr-field">
+    <label>Proyecto</label>
+    <input class="hdr-inp" id="projectName" value="mi-proyecto" style="width:140px" oninput="render()">
+  </div>
+  <div class="hdr-field">
+    <label>Compose</label>
+    <select class="hdr-inp" id="composeVer" onchange="render()" style="width:68px">
+      <option value="3.9">3.9</option>
+      <option value="3.8" selected>3.8</option>
+      <option value="3.7">3.7</option>
+      <option value="3">3</option>
+    </select>
+  </div>
+  <div class="hdr-sep"></div>
+  <label class="env-toggle" title="Genera un archivo .env separado con todas las variables sensibles">
+    <div class="tog" style="pointer-events:none">
+      <input type="checkbox" id="useEnv" onchange="toggleEnv()">
+      <span class="tsl"></span>
+    </div>
+    <span style="font-size:12px;color:var(--txd);cursor:pointer">Generar .env</span>
+    <span class="env-badge" id="envBadge">.env</span>
+  </label>
+</header>
+
+<div class="layout">
+  <div class="left">
+    <div class="search-wrap">
+      <input class="search-inp" id="searchInp" type="text" placeholder="Buscar servicio…" oninput="onSearch()">
+    </div>
+    <div class="panel-mid">
+      <nav class="cat-nav" id="catNav"></nav>
+      <div class="svc-area">
+        <div class="svc-grid" id="svcGrid"></div>
+      </div>
+    </div>
+    <div class="chips-bar" id="chipsBar">
+      <span class="chips-label">Activos:</span>
+      <div class="chips-list" id="chipsList"><span style="font-size:11px;color:var(--txm)">Ninguno</span></div>
+      <button class="btn-clear" onclick="clearAll()">Limpiar todo</button>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="yaml-hdr">
+      <div class="ytabs">
+        <button class="ytab active" id="tab-yaml" onclick="switchTab('yaml')">docker-compose.yml</button>
+        <button class="ytab" id="tab-env" onclick="switchTab('env')" style="display:none">.env</button>
+      </div>
+      <div class="yaml-acts">
+        <button class="btn btn-g" onclick="copyContent()">📋 Copiar</button>
+        <button class="btn btn-g" onclick="downloadContent()">💾 Descargar</button>
+        <button class="btn btn-p" id="deployBtn" onclick="deployToComeback()" style="display:none">🚀 Desplegar en comeback</button>
+      </div>
+    </div>
+    <div class="yaml-wrap" id="yamlWrap">
+      <div class="yaml-empty" id="yamlEmpty">
+        <div class="yaml-empty-i">🐳</div>
+        <div class="yaml-empty-t">Sin servicios seleccionados</div>
+        <div class="yaml-empty-s">Usa el panel izquierdo para elegir servicios.<br>El YAML se genera en tiempo real.</div>
+      </div>
+      <pre class="yaml-pre" id="yamlPre" style="display:none"></pre>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CATALOG
+// ═══════════════════════════════════════════════════════════
+const R={id:'restart',label:'Restart',type:'select',options:['unless-stopped','always','on-failure','no'],default:'unless-stopped'};
+const PUID={id:'puid',label:'PUID',type:'number',default:'1000'};
+const PGID={id:'pgid',label:'PGID',type:'number',default:'1000'};
+
+const CATALOG=[
+{id:'web',icon:'🌐',label:'Web',services:[
+  {id:'nginx',name:'nginx',icon:'🟢',img:'nginx:alpine',badge:'of',info:'Servidor web de alto rendimiento. Sin PHP incluido — úsalo con php-fpm de la categoría Runtime.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','stable-alpine','1.25-alpine','1.24-alpine','latest'],default:'alpine'},{id:'httpPort',label:'Puerto HTTP',type:'number',default:'80'},{id:'httpsPort',label:'Puerto HTTPS',type:'number',default:'443'},{id:'wwwRoot',label:'Document root',type:'text',default:'./www'},{id:'cfgPath',label:'Config dir (conf.d)',type:'text',default:'./nginx/conf.d'},R]},
+  {id:'apache',name:'Apache httpd',icon:'🪶',img:'httpd:alpine',badge:'of',info:'Servidor HTTP Apache clásico. Sin PHP. Con PHP activo en Runtime, usar php:X-apache como variante combinada.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','2.4-alpine','2.4','latest'],default:'alpine'},{id:'httpPort',label:'Puerto HTTP',type:'number',default:'80'},{id:'wwwRoot',label:'Document root',type:'text',default:'./www'},R]},
+  {id:'caddy',name:'Caddy',icon:'🔵',img:'caddy:alpine',badge:'of',info:'Servidor web con HTTPS automático (Let\'s Encrypt). Caddyfile simple y potente.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','latest','2-alpine'],default:'alpine'},{id:'httpPort',label:'Puerto HTTP',type:'number',default:'80'},{id:'httpsPort',label:'Puerto HTTPS',type:'number',default:'443'},{id:'caddyfile',label:'Caddyfile path',type:'text',default:'./Caddyfile'},{id:'wwwRoot',label:'Document root',type:'text',default:'./www'},R]},
+  {id:'traefik',name:'Traefik',icon:'🔀',img:'traefik:latest',badge:'of',info:'Reverse proxy con autodiscovery Docker. Gestiona routing, SSL y load balancing automáticamente.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','v3.0','v2.10'],default:'latest'},{id:'httpPort',label:'Puerto HTTP',type:'number',default:'80'},{id:'httpsPort',label:'Puerto HTTPS',type:'number',default:'443'},{id:'dashPort',label:'Dashboard',type:'number',default:'8080'},R]},
+  {id:'haproxy',name:'HAProxy',icon:'⚖️',img:'haproxy:alpine',badge:'of',info:'Load balancer de alta disponibilidad. Requiere haproxy.cfg manual.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','latest','2.9-alpine'],default:'alpine'},{id:'httpPort',label:'Puerto HTTP',type:'number',default:'80'},{id:'httpsPort',label:'Puerto HTTPS',type:'number',default:'443'},{id:'cfgPath',label:'Config file',type:'text',default:'./haproxy/haproxy.cfg'},R]},
+]},
+
+{id:'runtime',icon:'🐘',label:'Runtime',services:[
+  {id:'phpfpm',name:'PHP-FPM',icon:'🐘',img:'php:8.2-fpm',badge:'of',info:'📦 Extensiones base: opcache, json. Para uso con nginx. Para extensiones adicionales, gestiona tu propio Dockerfile.',
+   fields:[{id:'version',label:'Versión PHP',type:'select',options:['8.3','8.2','8.1','8.0','7.4'],default:'8.2'},{id:'memLimit',label:'Memory limit',type:'text',default:'128M'},{id:'uploadSize',label:'Upload max size',type:'text',default:'64M'},{id:'execTime',label:'Max exec time (s)',type:'number',default:'30'},{id:'wwwRoot',label:'Document root',type:'text',default:'./www'},R]},
+  {id:'nodejs',name:'Node.js',icon:'🟩',img:'node:20-alpine',badge:'of',info:'Runtime JavaScript. Las dependencias del proyecto se gestionan vía package.json.',
+   fields:[{id:'version',label:'Versión',type:'select',options:['22-alpine','20-alpine','18-alpine','lts-alpine','latest'],default:'20-alpine'},{id:'port',label:'Puerto',type:'number',default:'3000'},{id:'appDir',label:'App directory',type:'text',default:'./app'},{id:'cmd',label:'Comando inicio',type:'text',default:'node index.js'},R]},
+  {id:'python',name:'Python',icon:'🐍',img:'python:3.12-alpine',badge:'of',info:'Runtime Python. Dependencias vía requirements.txt.',
+   fields:[{id:'version',label:'Versión',type:'select',options:['3.12-alpine','3.11-alpine','3.12-slim','latest'],default:'3.12-alpine'},{id:'port',label:'Puerto',type:'number',default:'8000'},{id:'appDir',label:'App directory',type:'text',default:'./app'},{id:'cmd',label:'Comando inicio',type:'text',default:'python app.py'},R]},
+  {id:'deno',name:'Deno',icon:'🦕',img:'denoland/deno:alpine',badge:'of',info:'Runtime JavaScript/TypeScript seguro. Alternativa moderna a Node.js.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','latest'],default:'alpine'},{id:'port',label:'Puerto',type:'number',default:'8000'},{id:'appDir',label:'App directory',type:'text',default:'./app'},{id:'cmd',label:'Comando inicio',type:'text',default:'deno run --allow-net main.ts'},R]},
+]},
+
+{id:'sql',icon:'🗄️',label:'SQL',services:[
+  {id:'mariadb',name:'MariaDB',icon:'🐬',img:'mariadb:latest',badge:'of',info:'Base de datos relacional. Compatible con MySQL. Recomendada para WordPress, Drupal y Joomla.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','11','10.11','10.6'],default:'latest'},{id:'rootPass',label:'Root password',type:'text',default:'root_secret',envKey:'MARIADB_ROOT_PASSWORD'},{id:'db',label:'Database',type:'text',default:'mydb'},{id:'user',label:'Usuario',type:'text',default:'dbuser',envKey:'MARIADB_USER'},{id:'pass',label:'Password',type:'text',default:'db_secret',envKey:'MARIADB_PASSWORD'},{id:'port',label:'Puerto',type:'number',default:'3306'},R]},
+  {id:'mysql',name:'MySQL',icon:'🐬',img:'mysql:8.0',badge:'of',info:'Base de datos relacional de Oracle. Ampliamente compatible con aplicaciones empresariales.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['8.0','8.3','5.7','latest'],default:'8.0'},{id:'rootPass',label:'Root password',type:'text',default:'root_secret',envKey:'MYSQL_ROOT_PASSWORD'},{id:'db',label:'Database',type:'text',default:'mydb'},{id:'user',label:'Usuario',type:'text',default:'dbuser',envKey:'MYSQL_USER'},{id:'pass',label:'Password',type:'text',default:'db_secret',envKey:'MYSQL_PASSWORD'},{id:'port',label:'Puerto',type:'number',default:'3306'},R]},
+  {id:'postgres',name:'PostgreSQL',icon:'🐘',img:'postgres:16-alpine',badge:'of',info:'Base de datos relacional avanzada. Recomendada para Gitea, Mattermost, Matrix y Nextcloud.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['16-alpine','15-alpine','14-alpine','latest'],default:'16-alpine'},{id:'user',label:'Usuario',type:'text',default:'pguser',envKey:'POSTGRES_USER'},{id:'pass',label:'Password',type:'text',default:'pg_secret',envKey:'POSTGRES_PASSWORD'},{id:'db',label:'Database',type:'text',default:'mydb'},{id:'port',label:'Puerto',type:'number',default:'5432'},R]},
+]},
+
+{id:'nosql',icon:'📦',label:'NoSQL',services:[
+  {id:'mongodb',name:'MongoDB',icon:'🍃',img:'mongo:latest',badge:'of',info:'Base de datos orientada a documentos JSON. Necesaria para Rocket.Chat.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','7.0','6.0','5.0'],default:'latest'},{id:'rootUser',label:'Root user',type:'text',default:'admin',envKey:'MONGO_INITDB_ROOT_USERNAME'},{id:'rootPass',label:'Root password',type:'text',default:'mongo_secret',envKey:'MONGO_INITDB_ROOT_PASSWORD'},{id:'db',label:'Init database',type:'text',default:'mydb'},{id:'port',label:'Puerto',type:'number',default:'27017'},R]},
+  {id:'redis',name:'Redis',icon:'🔴',img:'redis:alpine',badge:'of',info:'Cache en memoria y message broker. Usado por WordPress, Nextcloud y muchos más.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','7-alpine','6-alpine','latest'],default:'alpine'},{id:'port',label:'Puerto',type:'number',default:'6379'},{id:'pass',label:'Password (vacío = sin auth)',type:'text',default:'',envKey:'REDIS_PASSWORD'},{id:'maxMem',label:'Max memory',type:'text',default:'256mb'},R]},
+  {id:'memcached',name:'Memcached',icon:'🟡',img:'memcached:alpine',badge:'of',info:'Cache en memoria distribuida. Alternativa ligera a Redis.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','latest','1.6-alpine'],default:'alpine'},{id:'port',label:'Puerto',type:'number',default:'11211'},{id:'memory',label:'Memoria (MB)',type:'number',default:'64'},R]},
+  {id:'couchdb',name:'CouchDB',icon:'🛋️',img:'couchdb:latest',badge:'of',info:'Base de datos NoSQL con API HTTP REST nativa. Sincronización offline integrada.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','3.3','3.2'],default:'latest'},{id:'user',label:'Admin user',type:'text',default:'admin',envKey:'COUCHDB_USER'},{id:'pass',label:'Admin password',type:'text',default:'couch_secret',envKey:'COUCHDB_PASSWORD'},{id:'port',label:'Puerto',type:'number',default:'5984'},R]},
+]},
+
+{id:'queue',icon:'🔀',label:'Queue',services:[
+  {id:'rabbitmq',name:'RabbitMQ',icon:'🐰',img:'rabbitmq:management-alpine',badge:'of',info:'Message broker AMQP con UI de gestión en el puerto 15672.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['management-alpine','management','3-management-alpine'],default:'management-alpine'},{id:'user',label:'Usuario',type:'text',default:'admin',envKey:'RABBITMQ_DEFAULT_USER'},{id:'pass',label:'Password',type:'text',default:'rabbit_secret',envKey:'RABBITMQ_DEFAULT_PASS'},{id:'port',label:'Puerto AMQP',type:'number',default:'5672'},{id:'mgmtPort',label:'Puerto UI',type:'number',default:'15672'},R]},
+  {id:'nats',name:'NATS',icon:'📡',img:'nats:alpine',badge:'of',info:'Message broker ultraligero para microservicios. Latencia muy baja.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','latest','2-alpine'],default:'alpine'},{id:'port',label:'Puerto cliente',type:'number',default:'4222'},{id:'monPort',label:'Puerto monitoring',type:'number',default:'8222'},R]},
+  {id:'kafka',name:'Kafka',icon:'📨',img:'bitnami/kafka:latest',badge:'bi',info:'Plataforma de streaming distribuido. Imagen Bitnami con KRaft mode (sin ZooKeeper).',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','3.6','3.5'],default:'latest'},{id:'port',label:'Puerto',type:'number',default:'9092'},R]},
+]},
+
+{id:'search',icon:'🔍',label:'Search',services:[
+  {id:'elasticsearch',name:'Elasticsearch',icon:'🔍',img:'elasticsearch:8.11.0',badge:'of',info:'Motor de búsqueda y análisis. RAM mínima recomendada: 2 GB. Añade kibana para UI.',
+   fields:[{id:'version',label:'Versión',type:'select',options:['8.11.0','8.10.0','7.17.0'],default:'8.11.0'},{id:'port',label:'Puerto HTTP',type:'number',default:'9200'},{id:'heapSize',label:'JVM Heap size',type:'text',default:'512m'},{id:'clusterName',label:'Cluster name',type:'text',default:'my-cluster'},R]},
+  {id:'meilisearch',name:'MeiliSearch',icon:'🔎',img:'getmeili/meilisearch:latest',badge:'of',info:'Motor de búsqueda rápido y fácil. Alternativa ligera a Elasticsearch.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','v1.5','v1.4'],default:'latest'},{id:'port',label:'Puerto',type:'number',default:'7700'},{id:'masterKey',label:'Master Key',type:'text',default:'my_master_key',envKey:'MEILI_MASTER_KEY'},R]},
+  {id:'opensearch',name:'OpenSearch',icon:'🔏',img:'opensearchproject/opensearch:latest',badge:'of',info:'Fork open source de Elasticsearch. Compatible con la API ES.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['latest','2.11.0','2.10.0'],default:'latest'},{id:'port',label:'Puerto HTTP',type:'number',default:'9200'},{id:'heapSize',label:'JVM Heap size',type:'text',default:'512m'},R]},
+]},
+
+{id:'media',icon:'📺',label:'Media',services:[
+  {id:'jellyfin',name:'Jellyfin',icon:'🎬',img:'jellyfin/jellyfin:latest',badge:'of',info:'Servidor multimedia libre y open source. Transcoding, Series, Películas, Música.',
+   fields:[{id:'port',label:'Puerto web',type:'number',default:'8096'},{id:'mediaPath',label:'Directorio media',type:'text',default:'./media'},{id:'cfgPath',label:'Config dir',type:'text',default:'./jellyfin/config'},{id:'cachePath',label:'Cache dir',type:'text',default:'./jellyfin/cache'},R]},
+  {id:'plex',name:'Plex',icon:'🎭',img:'linuxserver/plex:latest',badge:'ls',info:'Servidor multimedia Plex. Linuxserver.io: multiarch, actualizaciones automáticas.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'32400'},{id:'mediaPath',label:'Directorio media',type:'text',default:'./media'},{id:'cfgPath',label:'Config dir',type:'text',default:'./plex/config'},{id:'claimToken',label:'Plex Claim token',type:'text',default:'',envKey:'PLEX_CLAIM'},PUID,PGID,R]},
+  {id:'emby',name:'Emby',icon:'📡',img:'linuxserver/emby:latest',badge:'ls',info:'Servidor multimedia alternativo a Plex. Imagen Linuxserver.io.',
+   fields:[{id:'port',label:'Puerto HTTP',type:'number',default:'8096'},{id:'httpsPort',label:'Puerto HTTPS',type:'number',default:'8920'},{id:'mediaPath',label:'Directorio media',type:'text',default:'./media'},{id:'cfgPath',label:'Config dir',type:'text',default:'./emby/config'},PUID,PGID,R]},
+  {id:'navidrome',name:'Navidrome',icon:'🎵',img:'deluan/navidrome:latest',badge:'of',info:'Servidor de música compatible con Subsonic/Airsonic API.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'4533'},{id:'musicPath',label:'Directorio música',type:'text',default:'./music'},{id:'dataPath',label:'Data dir',type:'text',default:'./navidrome/data'},R]},
+  {id:'airsonic',name:'Airsonic',icon:'🎸',img:'linuxserver/airsonic-advanced:latest',badge:'ls',info:'Servidor de música fork con mejoras. Imagen Linuxserver.io.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'4040'},{id:'musicPath',label:'Directorio música',type:'text',default:'./music'},{id:'cfgPath',label:'Config dir',type:'text',default:'./airsonic/config'},PUID,PGID,R]},
+  {id:'funkwhale',name:'Funkwhale',icon:'🎶',img:'funkwhale/all-in-one:latest',badge:'of',info:'Plataforma social de música federada (ActivityPub). Necesita PostgreSQL.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'80'},{id:'hostname',label:'Hostname',type:'text',default:'localhost'},{id:'adminUser',label:'Admin user',type:'text',default:'admin',envKey:'FUNKWHALE_ADMIN_USERNAME'},{id:'adminPass',label:'Admin password',type:'text',default:'fw_secret',envKey:'FUNKWHALE_ADMIN_PASSWORD'},{id:'dataPath',label:'Data dir',type:'text',default:'./funkwhale/data'},R]},
+]},
+
+{id:'ebooks',icon:'📚',label:'Ebooks',services:[
+  {id:'calibreweb',name:'Calibre-web',icon:'📖',img:'linuxserver/calibre-web:latest',badge:'ls',info:'Interfaz web para biblioteca Calibre. Requiere biblioteca Calibre existente en el host.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'8083'},{id:'booksPath',label:'Directorio libros (Calibre)',type:'text',default:'./books'},{id:'cfgPath',label:'Config dir',type:'text',default:'./calibre-web/config'},PUID,PGID,R]},
+  {id:'kavita',name:'Kavita',icon:'📗',img:'jvmilazz0/kavita:latest',badge:'of',info:'Servidor de manga, cómics y libros. Interfaz moderna y rápida.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'5000'},{id:'libraryPath',label:'Directorio biblioteca',type:'text',default:'./books'},{id:'dataPath',label:'Data dir',type:'text',default:'./kavita/data'},R]},
+  {id:'komga',name:'Komga',icon:'📕',img:'gotson/komga:latest',badge:'of',info:'Servidor de cómics y manga con API Komga. Interfaz moderna.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'25600'},{id:'libraryPath',label:'Directorio biblioteca',type:'text',default:'./books'},{id:'cfgPath',label:'Config dir',type:'text',default:'./komga'},R]},
+  {id:'ubooquity',name:'Ubooquity',icon:'📘',img:'linuxserver/ubooquity:latest',badge:'ls',info:'Servidor de libros y cómics con soporte OPDS. Imagen Linuxserver.io.',
+   fields:[{id:'port',label:'Puerto User',type:'number',default:'2202'},{id:'adminPort',label:'Puerto Admin',type:'number',default:'2203'},{id:'booksPath',label:'Directorio libros',type:'text',default:'./books'},{id:'cfgPath',label:'Config dir',type:'text',default:'./ubooquity/config'},PUID,PGID,R]},
+]},
+
+{id:'cms',icon:'🌍',label:'CMS',services:[
+  {id:'wordpress',name:'WordPress',icon:'🔵',img:'wordpress:latest',badge:'of',hasIWS:true,
+   info:'📦 Incluye: Apache, PHP 8.2, gd, mysqli, zip, mbstring, xml, opcache. Conectar con MariaDB o MySQL.',
+   fields:[{id:'tag',label:'Imagen',type:'select',options:['latest','php8.2-apache','php8.1-apache','php8.2-fpm-alpine'],default:'latest'},{id:'port',label:'Puerto',type:'number',default:'80'},{id:'dbHost',label:'DB Host (servicio)',type:'text',default:'mariadb'},{id:'dbName',label:'DB Name',type:'text',default:'wordpress'},{id:'dbUser',label:'DB User',type:'text',default:'wp_user',envKey:'WORDPRESS_DB_USER'},{id:'dbPass',label:'DB Password',type:'text',default:'wp_secret',envKey:'WORDPRESS_DB_PASSWORD'},{id:'tablePrefix',label:'Table prefix',type:'text',default:'wp_'},R]},
+  {id:'drupal',name:'Drupal',icon:'💧',img:'drupal:latest',badge:'of',hasIWS:true,
+   info:'📦 Incluye: Apache, PHP 8.2, gd, pdo, pdo_mysql, xml, opcache. Conectar con MariaDB, MySQL o PostgreSQL.',
+   fields:[{id:'tag',label:'Imagen',type:'select',options:['latest','10-php8.2-apache','10-php8.1-apache'],default:'latest'},{id:'port',label:'Puerto',type:'number',default:'80'},{id:'cfgPath',label:'Config dir',type:'text',default:'./drupal/config'},R]},
+  {id:'joomla',name:'Joomla',icon:'🟠',img:'joomla:latest',badge:'of',hasIWS:true,
+   info:'📦 Incluye: Apache, PHP 8.1, pdo, pdo_mysql, mysqli, json, zip. Conectar con MariaDB o MySQL.',
+   fields:[{id:'tag',label:'Imagen',type:'select',options:['latest','php8.1-apache','php8.0-apache'],default:'latest'},{id:'port',label:'Puerto',type:'number',default:'80'},{id:'dbHost',label:'DB Host',type:'text',default:'mariadb'},{id:'dbUser',label:'DB User',type:'text',default:'joomla_user',envKey:'JOOMLA_DB_USER'},{id:'dbPass',label:'DB Password',type:'text',default:'joomla_secret',envKey:'JOOMLA_DB_PASSWORD'},{id:'dbName',label:'DB Name',type:'text',default:'joomla_db'},R]},
+  {id:'ghost',name:'Ghost',icon:'👻',img:'ghost:alpine',badge:'of',hasIWS:false,
+   info:'📦 Incluye: Node.js, Ghost CMS. Plataforma de blogging moderna. Conectar con MySQL.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['alpine','latest','5-alpine'],default:'alpine'},{id:'port',label:'Puerto',type:'number',default:'2368'},{id:'url',label:'URL del sitio',type:'text',default:'http://localhost:2368'},{id:'dbHost',label:'DB Host',type:'text',default:'mysql'},{id:'dbUser',label:'DB User',type:'text',default:'ghost_user',envKey:'DB_USER'},{id:'dbPass',label:'DB Password',type:'text',default:'ghost_secret',envKey:'DB_PASS'},{id:'dbName',label:'DB Name',type:'text',default:'ghost_db'},R]},
+  {id:'nextcloud',name:'Nextcloud',icon:'☁️',img:'nextcloud:apache',badge:'of',hasIWS:true,
+   info:'📦 Incluye: Apache, PHP 8.2, todas las extensiones necesarias. Nube personal y empresarial.',
+   fields:[{id:'tag',label:'Imagen',type:'select',options:['apache','fpm-alpine','latest'],default:'apache'},{id:'port',label:'Puerto',type:'number',default:'80'},{id:'adminUser',label:'Admin user',type:'text',default:'admin',envKey:'NEXTCLOUD_ADMIN_USER'},{id:'adminPass',label:'Admin password',type:'text',default:'nc_secret',envKey:'NEXTCLOUD_ADMIN_PASSWORD'},{id:'dataPath',label:'Data dir',type:'text',default:'./nextcloud/data'},R]},
+]},
+
+{id:'cloud',icon:'☁️',label:'Cloud',services:[
+  {id:'minio',name:'MinIO',icon:'🪣',img:'minio/minio:latest',badge:'of',info:'Almacenamiento de objetos compatible con S3. Ideal para backups y archivos estáticos.',
+   fields:[{id:'apiPort',label:'Puerto API',type:'number',default:'9000'},{id:'consolePort',label:'Puerto Console',type:'number',default:'9001'},{id:'user',label:'Root user',type:'text',default:'minioadmin',envKey:'MINIO_ROOT_USER'},{id:'pass',label:'Root password',type:'text',default:'minio_secret',envKey:'MINIO_ROOT_PASSWORD'},{id:'dataPath',label:'Data dir',type:'text',default:'./minio/data'},R]},
+  {id:'filebrowser',name:'FileBrowser',icon:'📁',img:'filebrowser/filebrowser:latest',badge:'of',info:'Explorador de archivos web con autenticación. Gestión de ficheros via navegador.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'8080'},{id:'rootPath',label:'Directorio raíz',type:'text',default:'./files'},{id:'cfgPath',label:'Config dir',type:'text',default:'./filebrowser'},R]},
+  {id:'vaultwarden',name:'Vaultwarden',icon:'🔑',img:'vaultwarden/server:latest',badge:'of',info:'Servidor Bitwarden open source. Gestor de contraseñas self-hosted.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'80'},{id:'adminToken',label:'Admin token',type:'text',default:'',envKey:'ADMIN_TOKEN'},{id:'dataPath',label:'Data dir',type:'text',default:'./vaultwarden/data'},{id:'domain',label:'Domain',type:'text',default:'http://localhost'},R]},
+  {id:'seafile',name:'Seafile',icon:'🌊',img:'seafileltd/seafile-mc:latest',badge:'of',info:'Sincronización de archivos eficiente. Necesita MariaDB y Memcached.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'80'},{id:'adminEmail',label:'Admin email',type:'text',default:'admin@example.com',envKey:'SEAFILE_ADMIN_EMAIL'},{id:'adminPass',label:'Admin password',type:'text',default:'seafile_secret',envKey:'SEAFILE_ADMIN_PASSWORD'},{id:'dataPath',label:'Data dir',type:'text',default:'./seafile/data'},R]},
+]},
+
+{id:'auth',icon:'🔒',label:'Auth',services:[
+  {id:'authelia',name:'Authelia',icon:'🛡️',img:'authelia/authelia:latest',badge:'of',info:'Portal SSO con 2FA. Se integra con Traefik/nginx como middleware de autenticación.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'9091'},{id:'cfgPath',label:'Config dir',type:'text',default:'./authelia/config'},R]},
+  {id:'keycloak',name:'Keycloak',icon:'🔐',img:'keycloak/keycloak:latest',badge:'of',info:'Solución IAM/SSO empresarial. OAuth2, OIDC, SAML. En producción: conectar a PostgreSQL.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'8080'},{id:'adminUser',label:'Admin user',type:'text',default:'admin',envKey:'KEYCLOAK_ADMIN'},{id:'adminPass',label:'Admin password',type:'text',default:'kc_secret',envKey:'KEYCLOAK_ADMIN_PASSWORD'},R]},
+  {id:'wgeasy',name:'WireGuard Easy',icon:'🔰',img:'ghcr.io/wg-easy/wg-easy:latest',badge:'tr',info:'WireGuard VPN con interfaz web. La opción más simple para una VPN self-hosted.',
+   fields:[{id:'vpnPort',label:'Puerto VPN (UDP)',type:'number',default:'51820'},{id:'uiPort',label:'Puerto UI web',type:'number',default:'51821'},{id:'wgHost',label:'IP/dominio público',type:'text',default:'0.0.0.0',envKey:'WG_HOST'},{id:'pass',label:'UI Password',type:'text',default:'wg_secret',envKey:'PASSWORD'},R]},
+  {id:'portainer_agent',name:'Portainer Agent',icon:'🤖',img:'portainer/agent:latest',badge:'of',info:'Agente para gestión remota desde Portainer CE. Acceso al socket Docker.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'9001'},R]},
+]},
+
+{id:'monitoring',icon:'📊',label:'Monitor',services:[
+  {id:'grafana',name:'Grafana',icon:'📈',img:'grafana/grafana:latest',badge:'of',info:'Visualización y dashboards. Conecta con Prometheus, Elasticsearch y más.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'3000'},{id:'adminUser',label:'Admin user',type:'text',default:'admin',envKey:'GF_SECURITY_ADMIN_USER'},{id:'adminPass',label:'Admin password',type:'text',default:'grafana_secret',envKey:'GF_SECURITY_ADMIN_PASSWORD'},R]},
+  {id:'prometheus',name:'Prometheus',icon:'🔥',img:'prom/prometheus:latest',badge:'of',info:'Monitorización y alertas por scraping HTTP.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'9090'},{id:'cfgPath',label:'Config file',type:'text',default:'./prometheus.yml'},R]},
+  {id:'uptimekuma',name:'Uptime Kuma',icon:'🟢',img:'louislam/uptime-kuma:latest',badge:'tr',info:'Monitor de disponibilidad. Alertas Telegram, Slack, email, Discord y más.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'3001'},{id:'dataPath',label:'Data dir',type:'text',default:'./uptime-kuma/data'},R]},
+  {id:'portainer',name:'Portainer CE',icon:'🐳',img:'portainer/portainer-ce:latest',badge:'of',info:'Gestión visual de contenedores Docker vía interfaz web.',
+   fields:[{id:'httpPort',label:'Puerto HTTP',type:'number',default:'9000'},{id:'httpsPort',label:'Puerto HTTPS',type:'number',default:'9443'},{id:'dataPath',label:'Data dir',type:'text',default:'./portainer/data'},R]},
+  {id:'netdata',name:'Netdata',icon:'📉',img:'netdata/netdata:latest',badge:'of',info:'Monitorización en tiempo real del sistema y contenedores. Sin configuración.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'19999'},R]},
+  {id:'cadvisor',name:'cAdvisor',icon:'📊',img:'gcr.io/cadvisor/cadvisor:latest',badge:'go',info:'Métricas de uso de recursos por contenedor. Se integra con Prometheus.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'8080'},R]},
+]},
+
+{id:'devops',icon:'🔧',label:'DevOps',services:[
+  {id:'gitea',name:'Gitea',icon:'🍵',img:'gitea/gitea:latest',badge:'of',info:'Servidor Git self-hosted ligero. Alternativa a GitHub/GitLab. Recomendado con PostgreSQL.',
+   fields:[{id:'httpPort',label:'Puerto web',type:'number',default:'3000'},{id:'sshPort',label:'Puerto SSH',type:'number',default:'222'},{id:'dataPath',label:'Data dir',type:'text',default:'./gitea/data'},R]},
+  {id:'jenkins',name:'Jenkins',icon:'🤵',img:'jenkins/jenkins:lts-jdk17',badge:'of',info:'Servidor CI/CD con amplio ecosistema de plugins.',
+   fields:[{id:'tag',label:'Versión',type:'select',options:['lts-jdk17','lts-jdk11','latest'],default:'lts-jdk17'},{id:'httpPort',label:'Puerto web',type:'number',default:'8080'},{id:'agentPort',label:'Puerto agentes',type:'number',default:'50000'},{id:'dataPath',label:'Data dir',type:'text',default:'./jenkins/data'},{id:'javaOpts',label:'JAVA_OPTS',type:'text',default:'-Xmx512m'},R]},
+  {id:'woodpecker',name:'Woodpecker CI',icon:'🪵',img:'woodpeckerci/woodpecker-server:latest',badge:'of',info:'CI/CD ligero. Fork de Drone CI. Integración nativa con Gitea.',
+   fields:[{id:'port',label:'Puerto web',type:'number',default:'8000'},{id:'grpcPort',label:'Puerto GRPC',type:'number',default:'9000'},{id:'dataPath',label:'Data dir',type:'text',default:'./woodpecker/data'},{id:'giteaUrl',label:'Gitea URL',type:'text',default:'http://gitea:3000'},R]},
+  {id:'registry',name:'Docker Registry',icon:'📦',img:'registry:2',badge:'of',info:'Registro privado de imágenes Docker. Alternativa self-hosted a Docker Hub.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'5000'},{id:'dataPath',label:'Data dir',type:'text',default:'./registry/data'},R]},
+]},
+
+{id:'chat',icon:'💬',label:'Chat',services:[
+  {id:'rocketchat',name:'Rocket.Chat',icon:'🚀',img:'rocket.chat:latest',badge:'of',info:'Plataforma de comunicación self-hosted. Alternativa a Slack. Necesita MongoDB.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'3000'},{id:'mongoUrl',label:'MongoDB URL',type:'text',default:'mongodb://mongodb:27017/rocketchat'},{id:'rootUrl',label:'Root URL',type:'text',default:'http://localhost:3000'},R]},
+  {id:'matrix',name:'Matrix Synapse',icon:'🔗',img:'matrixdotorg/synapse:latest',badge:'of',info:'Servidor de mensajería federado. Protocolo Matrix. Necesita PostgreSQL.',
+   fields:[{id:'port',label:'Puerto federation',type:'number',default:'8448'},{id:'serverName',label:'Server name',type:'text',default:'localhost'},{id:'dataPath',label:'Data dir',type:'text',default:'./synapse/data'},R]},
+  {id:'mattermost',name:'Mattermost',icon:'💡',img:'mattermost/mattermost-team-edition:latest',badge:'of',info:'Alternativa open source a Slack. Necesita PostgreSQL.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'8065'},{id:'dataPath',label:'Data dir',type:'text',default:'./mattermost/data'},{id:'cfgPath',label:'Config dir',type:'text',default:'./mattermost/config'},R]},
+  {id:'mailhog',name:'Mailhog',icon:'📬',img:'mailhog/mailhog:latest',badge:'of',info:'Trampa SMTP para desarrollo. Captura emails sin enviarlos. Solo entornos dev.',
+   fields:[{id:'smtpPort',label:'Puerto SMTP',type:'number',default:'1025'},{id:'webPort',label:'Puerto web UI',type:'number',default:'8025'},R]},
+]},
+
+{id:'misc',icon:'🎯',label:'Misc',services:[
+  {id:'homer',name:'Homer',icon:'🏠',img:'b4bz/homer:latest',badge:'tr',info:'Dashboard de inicio para tus servicios self-hosted. Configurable vía YAML.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'8080'},{id:'cfgPath',label:'Config dir',type:'text',default:'./homer/config'},R]},
+  {id:'minecraft',name:'Minecraft',icon:'⛏️',img:'itzg/minecraft-server:latest',badge:'tr',info:'Servidor Minecraft Java Edition. Soporta Vanilla, Paper, Spigot, Fabric, Forge.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'25565'},{id:'mcVersion',label:'Versión MC',type:'text',default:'LATEST'},{id:'type',label:'Tipo',type:'select',options:['VANILLA','PAPER','SPIGOT','FABRIC','FORGE'],default:'VANILLA'},{id:'memory',label:'Memoria',type:'text',default:'2G'},{id:'dataPath',label:'Data dir',type:'text',default:'./minecraft/data'},R]},
+  {id:'watchtower',name:'Watchtower',icon:'🗼',img:'containrrr/watchtower:latest',badge:'tr',info:'Actualización automática de contenedores Docker.',
+   fields:[{id:'schedule',label:'Cron schedule',type:'text',default:'0 0 4 * * *'},R]},
+  {id:'whoami',name:'Whoami',icon:'❓',img:'traefik/whoami:latest',badge:'of',info:'Servicio HTTP de diagnóstico. Muestra headers y datos de la request. Ideal para probar Traefik.',
+   fields:[{id:'port',label:'Puerto',type:'number',default:'80'},R]},
+]},
+];
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const STATE={
+  activeCat:'web',
+  search:'',
+  activeTab:'yaml',
+  services:{},
+};
+
+// Init services state from CATALOG
+CATALOG.forEach(cat=>cat.services.forEach(svc=>{
+  const cfg={};
+  svc.fields.forEach(f=>cfg[f.id]=f.default);
+  STATE.services[svc.id]={enabled:false,cfg,expanded:false};
+}));
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+function pn(){return document.getElementById('projectName')?.value||'mi-proyecto'}
+function cv(){return document.getElementById('composeVer')?.value||'3.8'}
+function useEnv(){return document.getElementById('useEnv')?.checked||false}
+
+function getSvc(id){
+  for(const cat of CATALOG)for(const s of cat.services)if(s.id===id)return s;
+  return null;
+}
+
+function enabledServices(){
+  return Object.entries(STATE.services).filter(([,v])=>v.enabled).map(([k])=>k);
+}
+
+function hasIWSEnabled(){
+  // Returns names of CMS with integrated web server that are enabled
+  const iwsCms=[];
+  const cmscat=CATALOG.find(c=>c.id==='cms');
+  if(!cmscat)return iwsCms;
+  cmscat.services.forEach(s=>{
+    if(s.hasIWS&&STATE.services[s.id]?.enabled)iwsCms.push(s.name);
+  });
+  return iwsCms;
+}
+
+function webServerEnabled(){
+  return STATE.services.nginx?.enabled||STATE.services.apache?.enabled||
+         STATE.services.caddy?.enabled||STATE.services.traefik?.enabled;
+}
+
+function rv(cfg,field,useEnvMode){
+  const v=String(cfg[field.id]!==undefined?cfg[field.id]:field.default||'');
+  if(useEnvMode&&field.envKey&&v!=='')return`\${${field.envKey}}`;
+  return v;
+}
+
+// ═══════════════════════════════════════════════════════════
+// UI RENDERING
+// ═══════════════════════════════════════════════════════════
+function buildCategoryNav(){
+  const nav=document.getElementById('catNav');
+  nav.innerHTML=CATALOG.map(cat=>{
+    const count=cat.services.filter(s=>STATE.services[s.id]?.enabled).length;
+    const active=STATE.activeCat===cat.id&&!STATE.search;
+    return`<div class="cat-item${active?' active':''}" onclick="selectCat('${cat.id}')">
+      <span class="cat-icon">${cat.icon}</span>
+      <span class="cat-label">${cat.label}</span>
+      ${count>0?`<span class="cat-count">${count}</span>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderServiceGrid(){
+  const grid=document.getElementById('svcGrid');
+  let services=[];
+  let searchMode=false;
+
+  if(STATE.search.length>1){
+    searchMode=true;
+    const q=STATE.search.toLowerCase();
+    CATALOG.forEach(cat=>{
+      cat.services.forEach(s=>{
+        if(s.name.toLowerCase().includes(q)||s.id.includes(q)||
+           s.img.toLowerCase().includes(q)||(s.info||'').toLowerCase().includes(q)){
+          services.push({svc:s,catLabel:cat.label,catIcon:cat.icon});
+        }
+      });
+    });
+  }else{
+    const cat=CATALOG.find(c=>c.id===STATE.activeCat);
+    if(cat)services=cat.services.map(s=>({svc:s,catLabel:null}));
+  }
+
+  if(!services.length){
+    grid.innerHTML=`<div class="cat-empty">${STATE.search?'Sin resultados para "'+STATE.search+'"':'Sin servicios en esta categoría'}</div>`;
+    return;
+  }
+
+  let html='';
+  if(searchMode&&services.length){
+    html+=`<div class="search-label">🔍 ${services.length} resultado${services.length!==1?'s':''} para "${STATE.search}"</div>`;
+  }
+
+  services.forEach(({svc,catLabel})=>{
+    const st=STATE.services[svc.id];
+    const on=st.enabled;
+    const exp=st.expanded&&on;
+    const badgeClass={'of':'badge-of','ls':'badge-ls','bi':'badge-bi','tr':'badge-tr','go':'badge-go'}[svc.badge]||'badge-of';
+    const badgeLabel={'of':'Oficial','ls':'Linuxserver','bi':'Bitnami','tr':'Trusted','go':'Google'}[svc.badge]||'Oficial';
+
+    html+=`<div class="svc-card${on?' on':''}${exp?' expanded':''}" id="card-${svc.id}">
+      <div class="svc-hdr" onclick="cardClick(event,'${svc.id}')">
+        <span class="svc-icon">${svc.icon}</span>
+        <div class="svc-info">
+          <div class="svc-name">${svc.name}${catLabel?` <span style="font-size:9px;color:var(--txm);font-weight:400">${catLabel}</span>`:''}</div>
+          <div class="svc-img" id="img-${svc.id}">${getServiceImage(svc,st.cfg)}</div>
+        </div>
+        <span class="badge ${badgeClass}" title="${badgeLabel}">${badgeLabel}</span>
+        <label class="tog" onclick="event.stopPropagation()">
+          <input type="checkbox" id="chk-${svc.id}" ${on?'checked':''} onchange="toggleSvc('${svc.id}')">
+          <span class="tsl"></span>
+        </label>
+      </div>
+      <div class="svc-cfg${exp?' open':''}" id="cfg-${svc.id}">
+        ${buildCfgPanel(svc,st.cfg)}
+      </div>
+    </div>`;
+  });
+
+  grid.innerHTML=html;
+  wireFieldEvents();
+}
+
+function getServiceImage(svc,cfg){
+  // Derive dynamic image tag where applicable
+  if(svc.id==='phpfpm'){
+    const v=cfg.version||'8.2';
+    return`php:${v}-fpm`;
+  }
+  if(svc.id==='nodejs')return`node:${cfg.version||'20-alpine'}`;
+  if(svc.id==='python')return`python:${cfg.version||'3.12-alpine'}`;
+  if(svc.id==='deno')return`denoland/deno:${cfg.tag||'alpine'}`;
+  if(svc.id==='elasticsearch')return`elasticsearch:${cfg.version||'8.11.0'}`;
+  if(['mariadb','mysql','postgres','mongodb','redis','memcached','couchdb','kafka',
+      'meilisearch','opensearch','rabbitmq','nats','wordpress','drupal','joomla','ghost',
+      'nextcloud','nginx','apache','caddy','traefik','haproxy','jenkins'].includes(svc.id)){
+    const tagField=svc.fields.find(f=>f.id==='tag'||f.id==='version');
+    if(tagField){
+      const t=cfg[tagField.id]||tagField.default;
+      const base=svc.img.split(':')[0];
+      return`${base}:${t}`;
+    }
+  }
+  return svc.img;
+}
+
+function buildCfgPanel(svc,cfg){
+  let html='';
+  // Warning for CMS with integrated web server
+  if(svc.hasIWS&&webServerEnabled()){
+    html+=`<div class="svc-warn-box">⚠️ <span>Este CMS ya incluye servidor web (Apache). El servidor web externo es redundante salvo que uses esta imagen como FPM con nginx como proxy.</span></div>`;
+  }
+  if(svc.info){
+    html+=`<div class="svc-info-box">💡 <span>${svc.info}</span></div>`;
+  }
+  html+=`<div class="fields">`;
+  svc.fields.forEach(f=>{
+    const full=f.type==='text'&&(f.id.includes('Path')||f.id.includes('Dir')||f.id.includes('Url')||f.id.includes('url')||f.id==='mongoUrl'||f.id==='rootUrl'||f.id==='giteaUrl'||f.id==='cfgPath'||f.id==='wgHost'||f.id==='domain'||f.id==='hostname'||f.id==='serverName');
+    html+=`<div class="field${full?' full':''}">`;
+    html+=`<label>${f.label}</label>`;
+    if(f.type==='select'){
+      html+=`<select id="f-${svc.id}-${f.id}" onchange="updateField('${svc.id}','${f.id}',this.value)">`;
+      f.options.forEach(o=>html+=`<option value="${o}"${(cfg[f.id]||f.default)===o?' selected':''}>${o}</option>`);
+      html+=`</select>`;
+    }else{
+      html+=`<input type="${f.type==='password'?'text':f.type}" id="f-${svc.id}-${f.id}" value="${cfg[f.id]!==undefined?cfg[f.id]:f.default}" oninput="updateField('${svc.id}','${f.id}',this.value)">`;
+    }
+    html+=`</div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
+
+function wireFieldEvents(){}// handled via inline oninput/onchange
+
+function updateChips(){
+  const list=document.getElementById('chipsList');
+  const enabled=enabledServices();
+  if(!enabled.length){
+    list.innerHTML=`<span style="font-size:11px;color:var(--txm)">Ninguno</span>`;
+    return;
+  }
+  const iwsNames=hasIWSEnabled();
+  const wsOn=webServerEnabled();
+  const warnIds=(iwsNames.length&&wsOn)?iwsNames:[];
+
+  list.innerHTML=enabled.map(id=>{
+    const s=getSvc(id);
+    const warn=warnIds.some(n=>s&&s.name===n);
+    return`<span class="chip${warn?' chip-warn':''}" title="${warn?'⚠️ Incluye servidor web integrado':''}">
+      ${s?s.icon:''} ${s?s.name:id}
+      <span class="chip-x" onclick="disableSvc('${id}')">×</span>
+    </span>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EVENTS
+// ═══════════════════════════════════════════════════════════
+function selectCat(id){
+  STATE.activeCat=id;
+  STATE.search='';
+  document.getElementById('searchInp').value='';
+  buildCategoryNav();
+  renderServiceGrid();
+}
+
+function onSearch(){
+  STATE.search=document.getElementById('searchInp').value.trim();
+  buildCategoryNav();
+  renderServiceGrid();
+}
+
+function cardClick(e,id){
+  if(e.target.closest('.tog'))return;
+  const st=STATE.services[id];
+  if(!st.enabled){
+    // Enable and expand
+    st.enabled=true;
+    st.expanded=true;
+    document.getElementById(`chk-${id}`).checked=true;
+  }else{
+    st.expanded=!st.expanded;
+  }
+  const card=document.getElementById(`card-${id}`);
+  const cfg=document.getElementById(`cfg-${id}`);
+  if(card){card.classList.toggle('on',st.enabled);card.classList.toggle('expanded',st.expanded&&st.enabled);}
+  if(cfg){cfg.classList.toggle('open',st.expanded&&st.enabled);}
+  buildCategoryNav();
+  updateChips();
+  render();
+}
+
+function toggleSvc(id){
+  const chk=document.getElementById(`chk-${id}`);
+  const st=STATE.services[id];
+  st.enabled=chk.checked;
+  st.expanded=chk.checked;
+  const card=document.getElementById(`card-${id}`);
+  const cfg=document.getElementById(`cfg-${id}`);
+  if(card){card.classList.toggle('on',st.enabled);card.classList.toggle('expanded',st.expanded);}
+  if(cfg){cfg.classList.toggle('open',st.expanded);}
+  buildCategoryNav();
+  updateChips();
+  render();
+}
+
+function updateField(svcId,fieldId,value){
+  STATE.services[svcId].cfg[fieldId]=value;
+  // Update image label
+  const svc=getSvc(svcId);
+  if(svc){
+    const imgEl=document.getElementById(`img-${svcId}`);
+    if(imgEl)imgEl.textContent=getServiceImage(svc,STATE.services[svcId].cfg);
+  }
+  render();
+}
+
+function disableSvc(id){
+  const st=STATE.services[id];
+  st.enabled=false;
+  st.expanded=false;
+  // If currently rendered
+  const chk=document.getElementById(`chk-${id}`);
+  if(chk)chk.checked=false;
+  const card=document.getElementById(`card-${id}`);
+  if(card){card.classList.remove('on','expanded');}
+  const cfg=document.getElementById(`cfg-${id}`);
+  if(cfg)cfg.classList.remove('open');
+  buildCategoryNav();
+  updateChips();
+  render();
+}
+
+function clearAll(){
+  Object.keys(STATE.services).forEach(id=>{
+    STATE.services[id].enabled=false;
+    STATE.services[id].expanded=false;
+  });
+  buildCategoryNav();
+  renderServiceGrid();
+  updateChips();
+  render();
+}
+
+function toggleEnv(){
+  const on=useEnv();
+  document.getElementById('envBadge').classList.toggle('on',on);
+  const tabEnv=document.getElementById('tab-env');
+  if(tabEnv)tabEnv.style.display=on?'':'none';
+  if(!on&&STATE.activeTab==='env')switchTab('yaml');
+  render();
+}
+
+function switchTab(tab){
+  STATE.activeTab=tab;
+  document.getElementById('tab-yaml').classList.toggle('active',tab==='yaml');
+  document.getElementById('tab-env').classList.toggle('active',tab==='env');
+  renderPreview();
+}
+
+// ═══════════════════════════════════════════════════════════
+// YAML GENERATION
+// ═══════════════════════════════════════════════════════════
+function hasAny(){return enabledServices().length>0}
+
+function computeDeps(){
+  const has=id=>STATE.services[id]?.enabled;
+  const d={};
+  if(has('nginx')&&has('phpfpm'))d.nginx=['phpfpm'];
+  if(has('grafana')&&has('prometheus'))d.grafana=['prometheus'];
+  if(has('woodpecker')&&has('gitea'))d.woodpecker=['gitea'];
+  if(has('rocketchat')&&has('mongodb'))d.rocketchat=['mongodb'];
+  if(has('wordpress')&&has('mariadb'))d.wordpress=['mariadb'];
+  else if(has('wordpress')&&has('mysql'))d.wordpress=['mysql'];
+  if(has('joomla')&&has('mariadb'))d.joomla=['mariadb'];
+  else if(has('joomla')&&has('mysql'))d.joomla=['mysql'];
+  if(has('ghost')&&has('mysql'))d.ghost=['mysql'];
+  if(has('nextcloud')&&has('postgres'))d.nextcloud=['postgres'];
+  if(has('funkwhale')&&has('postgres'))d.funkwhale=['postgres'];
+  if(has('matrix')&&has('postgres'))d.matrix=['postgres'];
+  if(has('mattermost')&&has('postgres'))d.mattermost=['postgres'];
+  return d;
+}
+
+function bsvc(id,image,pname,cfg,{ports=[],env={},vols=[],namedVols=[],cmd=null,extra=[],caps=[],privileged=false}={},deps=[]){
+  const L=[];
+  L.push('');
+  L.push(`  ${id}:`);
+  L.push(`    image: ${image}`);
+  L.push(`    container_name: ${pname}_${id.replace(/_/g,'-')}`);
+  if(deps.length){L.push('    depends_on:');deps.forEach(d=>L.push(`      - ${d}`));}
+  if(ports.length){L.push('    ports:');ports.forEach(p=>L.push(`      - "${p}"`));}
+  const envE=Object.entries(env).filter(([,v])=>v!==''&&v!==null&&v!==undefined);
+  if(envE.length){L.push('    environment:');envE.forEach(([k,v])=>L.push(`      ${k}: ${v}`));}
+  if(vols.length){L.push('    volumes:');vols.forEach(v=>L.push(`      - ${v}`));}
+  if(Array.isArray(cmd)&&cmd.length){L.push('    command:');cmd.forEach(c=>L.push(`      - ${c}`));}
+  else if(typeof cmd==='string'&&cmd){L.push(`    command: ${cmd}`);}
+  if(privileged)L.push('    privileged: true');
+  if(caps.length){L.push('    cap_add:');caps.forEach(c=>L.push(`      - ${c}`));}
+  extra.forEach(l=>L.push(l));
+  L.push('    networks:');
+  L.push('      - app-network');
+  L.push(`    restart: ${cfg.restart||'unless-stopped'}`);
+  return{lines:L,namedVols};
+}
+
+function generateYAML(){
+  if(!hasAny())return'';
+  const p=pn();const c=cfg=>STATE.services[cfg]?.cfg;
+  const ue=useEnv();
+  const deps=computeDeps();
+  const allLines=[];
+  const allNamedVols=new Set();
+
+  allLines.push(`# ════════════════════════════════════`);
+  allLines.push(`# 🐳 MelodY · Docker Compose Generator`);
+  allLines.push(`# Proyecto : ${p}`);
+  allLines.push(`# Generado : ${new Date().toLocaleDateString('es-ES')}`);
+  allLines.push(`# ════════════════════════════════════`);
+  allLines.push('');
+  allLines.push(`version: '${cv()}'`);
+  allLines.push('');
+  allLines.push('services:');
+
+  function add(id,image,opts){
+    const st=STATE.services[id];
+    if(!st?.enabled)return;
+    const cf=st.cfg;
+    const d=deps[id]||[];
+    const {lines,namedVols}=bsvc(id,image,p,cf,opts,d);
+    lines.forEach(l=>allLines.push(l));
+    (namedVols||[]).forEach(v=>allNamedVols.add(v));
+  }
+
+  function f(svcId,fid){
+    const svc=getSvc(svcId);const field=svc?.fields.find(x=>x.id===fid);
+    return rv(STATE.services[svcId].cfg,field||{id:fid,default:''},ue);
+  }
+  function g(svcId,fid){return STATE.services[svcId]?.cfg[fid]??''}
+
+  // ── Web ──
+  add('nginx',`nginx:${g('nginx','tag')}`,{
+    ports:[`${g('nginx','httpPort')}:80`,`${g('nginx','httpsPort')}:443`],
+    vols:[`${g('nginx','wwwRoot')}:/usr/share/nginx/html`,`${g('nginx','cfgPath')}:/etc/nginx/conf.d:ro`],
+  });
+  add('apache',`httpd:${g('apache','tag')}`,{
+    ports:[`${g('apache','httpPort')}:80`],
+    vols:[`${g('apache','wwwRoot')}:/usr/local/apache2/htdocs`],
+  });
+  add('caddy',`caddy:${g('caddy','tag')}`,{
+    ports:[`${g('caddy','httpPort')}:80`,`${g('caddy','httpsPort')}:443`],
+    vols:[`${g('caddy','caddyfile')}:/etc/caddy/Caddyfile:ro`,`${g('caddy','wwwRoot')}:/srv`,'caddy_data:/data','caddy_config:/config'],
+    namedVols:['caddy_data','caddy_config'],
+  });
+  add('traefik',`traefik:${g('traefik','tag')}`,{
+    ports:[`${g('traefik','httpPort')}:80`,`${g('traefik','httpsPort')}:443`,`${g('traefik','dashPort')}:8080`],
+    vols:['/var/run/docker.sock:/var/run/docker.sock:ro'],
+    cmd:['--api.insecure=true','--providers.docker=true','--providers.docker.exposedbydefault=false','--entrypoints.web.address=:80'],
+  });
+  add('haproxy',`haproxy:${g('haproxy','tag')}`,{
+    ports:[`${g('haproxy','httpPort')}:80`,`${g('haproxy','httpsPort')}:443`],
+    vols:[`${g('haproxy','cfgPath')}:/usr/local/etc/haproxy/haproxy.cfg:ro`],
+  });
+
+  // ── Runtime ──
+  if(STATE.services.phpfpm?.enabled){
+    const cf=c('phpfpm');const v=cf.version||'8.2';
+    add('phpfpm',`php:${v}-fpm`,{
+      vols:[`${cf.wwwRoot||'./www'}:/var/www/html`],
+      env:{PHP_MEMORY_LIMIT:f('phpfpm','memLimit'),UPLOAD_MAX_FILESIZE:f('phpfpm','uploadSize'),POST_MAX_SIZE:f('phpfpm','uploadSize'),MAX_EXECUTION_TIME:g('phpfpm','execTime')},
+    });
+  }
+  if(STATE.services.nodejs?.enabled){
+    const cf=c('nodejs');
+    add('nodejs',`node:${cf.version||'20-alpine'}`,{
+      ports:[`${cf.port}:${cf.port}`],vols:[`${cf.appDir}:/app`],
+      extra:['    working_dir: /app'],cmd:cf.cmd,
+    });
+  }
+  if(STATE.services.python?.enabled){
+    const cf=c('python');
+    add('python',`python:${cf.version||'3.12-alpine'}`,{
+      ports:[`${cf.port}:${cf.port}`],vols:[`${cf.appDir}:/app`],
+      extra:['    working_dir: /app'],cmd:cf.cmd,
+    });
+  }
+  if(STATE.services.deno?.enabled){
+    const cf=c('deno');
+    add('deno',`denoland/deno:${cf.tag||'alpine'}`,{
+      ports:[`${cf.port}:${cf.port}`],vols:[`${cf.appDir}:/app`],
+      extra:['    working_dir: /app'],cmd:cf.cmd,
+    });
+  }
+
+  // ── SQL ──
+  add('mariadb',`mariadb:${g('mariadb','tag')}`,{
+    ports:[`${g('mariadb','port')}:3306`],
+    env:{MYSQL_ROOT_PASSWORD:f('mariadb','rootPass'),MYSQL_DATABASE:g('mariadb','db'),MYSQL_USER:f('mariadb','user'),MYSQL_PASSWORD:f('mariadb','pass')},
+    vols:['mariadb_data:/var/lib/mysql'],namedVols:['mariadb_data'],
+  });
+  add('mysql',`mysql:${g('mysql','tag')}`,{
+    ports:[`${g('mysql','port')}:3306`],
+    env:{MYSQL_ROOT_PASSWORD:f('mysql','rootPass'),MYSQL_DATABASE:g('mysql','db'),MYSQL_USER:f('mysql','user'),MYSQL_PASSWORD:f('mysql','pass')},
+    vols:['mysql_data:/var/lib/mysql'],namedVols:['mysql_data'],
+  });
+  add('postgres',`postgres:${g('postgres','tag')}`,{
+    ports:[`${g('postgres','port')}:5432`],
+    env:{POSTGRES_USER:f('postgres','user'),POSTGRES_PASSWORD:f('postgres','pass'),POSTGRES_DB:g('postgres','db')},
+    vols:['postgres_data:/var/lib/postgresql/data'],namedVols:['postgres_data'],
+  });
+
+  // ── NoSQL ──
+  add('mongodb',`mongo:${g('mongodb','tag')}`,{
+    ports:[`${g('mongodb','port')}:27017`],
+    env:{MONGO_INITDB_ROOT_USERNAME:f('mongodb','rootUser'),MONGO_INITDB_ROOT_PASSWORD:f('mongodb','rootPass'),MONGO_INITDB_DATABASE:g('mongodb','db')},
+    vols:['mongodb_data:/data/db'],namedVols:['mongodb_data'],
+  });
+  if(STATE.services.redis?.enabled){
+    const cf=c('redis');
+    const redisCmd=cf.pass?`redis-server --requirepass ${f('redis','pass')} --maxmemory ${cf.maxMem} --maxmemory-policy allkeys-lru`:`redis-server --maxmemory ${cf.maxMem} --maxmemory-policy allkeys-lru`;
+    add('redis',`redis:${cf.tag||'alpine'}`,{ports:[`${cf.port}:6379`],vols:['redis_data:/data'],namedVols:['redis_data'],cmd:redisCmd});
+  }
+  add('memcached',`memcached:${g('memcached','tag')}`,{
+    ports:[`${g('memcached','port')}:11211`],cmd:`memcached -m ${g('memcached','memory')}`,
+  });
+  add('couchdb',`couchdb:${g('couchdb','tag')}`,{
+    ports:[`${g('couchdb','port')}:5984`],
+    env:{COUCHDB_USER:f('couchdb','user'),COUCHDB_PASSWORD:f('couchdb','pass')},
+    vols:['couchdb_data:/opt/couchdb/data'],namedVols:['couchdb_data'],
+  });
+
+  // ── Queue ──
+  add('rabbitmq',`rabbitmq:${g('rabbitmq','tag')}`,{
+    ports:[`${g('rabbitmq','port')}:5672`,`${g('rabbitmq','mgmtPort')}:15672`],
+    env:{RABBITMQ_DEFAULT_USER:f('rabbitmq','user'),RABBITMQ_DEFAULT_PASS:f('rabbitmq','pass')},
+    vols:['rabbitmq_data:/var/lib/rabbitmq'],namedVols:['rabbitmq_data'],
+  });
+  add('nats',`nats:${g('nats','tag')}`,{ports:[`${g('nats','port')}:4222`,`${g('nats','monPort')}:8222`]});
+  if(STATE.services.kafka?.enabled){
+    const cf=c('kafka');
+    add('kafka',`bitnami/kafka:${cf.tag||'latest'}`,{
+      ports:[`${cf.port}:9092`],
+      env:{KAFKA_CFG_NODE_ID:'0',KAFKA_CFG_PROCESS_ROLES:'controller,broker',KAFKA_CFG_LISTENERS:'PLAINTEXT://:9092,CONTROLLER://:9093',KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP:'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT',KAFKA_CFG_CONTROLLER_QUORUM_VOTERS:`0@kafka:9093`,KAFKA_CFG_CONTROLLER_LISTENER_NAMES:'CONTROLLER'},
+      vols:['kafka_data:/bitnami/kafka'],namedVols:['kafka_data'],
+    });
+  }
+
+  // ── Search ──
+  if(STATE.services.elasticsearch?.enabled){
+    const cf=c('elasticsearch');
+    add('elasticsearch',`elasticsearch:${cf.version||'8.11.0'}`,{
+      ports:[`${cf.port}:9200`,'9300:9300'],
+      env:{'discovery.type':'single-node','ES_JAVA_OPTS':`-Xms${cf.heapSize} -Xmx${cf.heapSize}`,'cluster.name':cf.clusterName,'xpack.security.enabled':'false'},
+      vols:['elasticsearch_data:/usr/share/elasticsearch/data'],namedVols:['elasticsearch_data'],
+    });
+  }
+  add('meilisearch',`getmeili/meilisearch:${g('meilisearch','tag')}`,{
+    ports:[`${g('meilisearch','port')}:7700`],
+    env:{MEILI_MASTER_KEY:f('meilisearch','masterKey')},
+    vols:['meilisearch_data:/meili_data'],namedVols:['meilisearch_data'],
+  });
+  add('opensearch',`opensearchproject/opensearch:${g('opensearch','tag')}`,{
+    ports:[`${g('opensearch','port')}:9200`],
+    env:{'discovery.type':'single-node','OPENSEARCH_JAVA_OPTS':`-Xms${g('opensearch','heapSize')} -Xmx${g('opensearch','heapSize')}`},
+    vols:['opensearch_data:/usr/share/opensearch/data'],namedVols:['opensearch_data'],
+  });
+
+  // ── Media ──
+  add('jellyfin','jellyfin/jellyfin:latest',{
+    ports:[`${g('jellyfin','port')}:8096`],
+    vols:[`${g('jellyfin','cfgPath')}:/config`,`${g('jellyfin','cachePath')}:/cache`,`${g('jellyfin','mediaPath')}:/media:ro`],
+  });
+  if(STATE.services.plex?.enabled){
+    const cf=c('plex');
+    add('plex','linuxserver/plex:latest',{
+      ports:[`${cf.port}:32400`],
+      env:{PUID:cf.puid,PGID:cf.pgid,VERSION:'docker',PLEX_CLAIM:f('plex','claimToken')},
+      vols:[`${cf.cfgPath}:/config`,`${cf.mediaPath}:/media:ro`],
+    });
+  }
+  if(STATE.services.emby?.enabled){
+    const cf=c('emby');
+    add('emby','linuxserver/emby:latest',{
+      ports:[`${cf.port}:8096`,`${cf.httpsPort}:8920`],
+      env:{PUID:cf.puid,PGID:cf.pgid},
+      vols:[`${cf.cfgPath}:/config`,`${cf.mediaPath}:/data/media:ro`],
+    });
+  }
+  add('navidrome','deluan/navidrome:latest',{
+    ports:[`${g('navidrome','port')}:4533`],
+    env:{ND_SCANSCHEDULE:'1h',ND_LOGLEVEL:'info',ND_SESSIONTIMEOUT:'24h',ND_BASEURL:''},
+    vols:[`${g('navidrome','dataPath')}:/data`,`${g('navidrome','musicPath')}:/music:ro`],namedVols:[],
+  });
+  if(STATE.services.airsonic?.enabled){
+    const cf=c('airsonic');
+    add('airsonic','linuxserver/airsonic-advanced:latest',{
+      ports:[`${cf.port}:4040`],env:{PUID:cf.puid,PGID:cf.pgid},
+      vols:[`${cf.cfgPath}:/config`,`${cf.musicPath}:/music:ro`],
+    });
+  }
+  if(STATE.services.funkwhale?.enabled){
+    const cf=c('funkwhale');
+    add('funkwhale','funkwhale/all-in-one:latest',{
+      ports:[`${cf.port}:80`],
+      env:{DJANGO_SECRET_KEY:'please-generate-a-secret-key',FUNKWHALE_HOSTNAME:cf.hostname,PROTOCOL:'http',FUNKWHALE_ADMIN_USERNAME:f('funkwhale','adminUser'),FUNKWHALE_ADMIN_PASSWORD:f('funkwhale','adminPass')},
+      vols:[`${cf.dataPath}:/data`,'funkwhale_music:/music'],namedVols:['funkwhale_music'],
+    });
+  }
+
+  // ── Ebooks ──
+  if(STATE.services.calibreweb?.enabled){const cf=c('calibreweb');
+    add('calibreweb','linuxserver/calibre-web:latest',{ports:[`${cf.port}:8083`],env:{PUID:cf.puid,PGID:cf.pgid},vols:[`${cf.cfgPath}:/config`,`${cf.booksPath}:/books`]});}
+  add('kavita','jvmilazz0/kavita:latest',{
+    ports:[`${g('kavita','port')}:5000`],
+    vols:[`${g('kavita','dataPath')}:/kavita/data`,`${g('kavita','libraryPath')}:/manga`],
+  });
+  add('komga','gotson/komga:latest',{
+    ports:[`${g('komga','port')}:25600`],
+    vols:[`${g('komga','cfgPath')}:/config`,`${g('komga','libraryPath')}:/data:ro`],
+  });
+  if(STATE.services.ubooquity?.enabled){const cf=c('ubooquity');
+    add('ubooquity','linuxserver/ubooquity:latest',{ports:[`${cf.port}:2202`,`${cf.adminPort}:2203`],env:{PUID:cf.puid,PGID:cf.pgid},vols:[`${cf.cfgPath}:/config`,`${cf.booksPath}:/books:ro`]});}
+
+  // ── CMS ──
+  if(STATE.services.wordpress?.enabled){const cf=c('wordpress');
+    add('wordpress',`wordpress:${cf.tag||'latest'}`,{ports:[`${cf.port}:80`],
+      env:{WORDPRESS_DB_HOST:cf.dbHost,WORDPRESS_DB_NAME:cf.dbName,WORDPRESS_DB_USER:f('wordpress','dbUser'),WORDPRESS_DB_PASSWORD:f('wordpress','dbPass'),WORDPRESS_TABLE_PREFIX:cf.tablePrefix},
+      vols:[`${p}_wp_data:/var/www/html`],namedVols:[`${p}_wp_data`]});}
+  if(STATE.services.drupal?.enabled){const cf=c('drupal');
+    add('drupal',`drupal:${cf.tag||'latest'}`,{ports:[`${cf.port}:80`],vols:[`${cf.cfgPath}:/var/www/html/sites/default`,`${p}_drupal_data:/var/www/html/modules`,`${p}_drupal_themes:/var/www/html/themes`],namedVols:[`${p}_drupal_data`,`${p}_drupal_themes`]});}
+  if(STATE.services.joomla?.enabled){const cf=c('joomla');
+    add('joomla',`joomla:${cf.tag||'latest'}`,{ports:[`${cf.port}:80`],
+      env:{JOOMLA_DB_HOST:cf.dbHost,JOOMLA_DB_NAME:cf.dbName,JOOMLA_DB_USER:f('joomla','dbUser'),JOOMLA_DB_PASSWORD:f('joomla','dbPass')},
+      vols:[`${p}_joomla_data:/var/www/html`],namedVols:[`${p}_joomla_data`]});}
+  if(STATE.services.ghost?.enabled){const cf=c('ghost');
+    add('ghost',`ghost:${cf.tag||'alpine'}`,{ports:[`${cf.port}:2368`],
+      env:{url:cf.url,'database__client':'mysql','database__connection__host':cf.dbHost,'database__connection__user':f('ghost','dbUser'),'database__connection__password':f('ghost','dbPass'),'database__connection__database':cf.dbName},
+      vols:['ghost_data:/var/lib/ghost/content'],namedVols:['ghost_data']});}
+  if(STATE.services.nextcloud?.enabled){const cf=c('nextcloud');
+    add('nextcloud',`nextcloud:${cf.tag||'apache'}`,{ports:[`${cf.port}:80`],
+      env:{NEXTCLOUD_ADMIN_USER:f('nextcloud','adminUser'),NEXTCLOUD_ADMIN_PASSWORD:f('nextcloud','adminPass')},
+      vols:[`${cf.dataPath}:/var/www/html/data`,'nextcloud_html:/var/www/html'],namedVols:['nextcloud_html']});}
+
+  // ── Cloud ──
+  if(STATE.services.minio?.enabled){const cf=c('minio');
+    add('minio','minio/minio:latest',{ports:[`${cf.apiPort}:9000`,`${cf.consolePort}:9001`],
+      env:{MINIO_ROOT_USER:f('minio','user'),MINIO_ROOT_PASSWORD:f('minio','pass')},
+      vols:[`${cf.dataPath}:/data`],cmd:'server /data --console-address ":9001"'});}
+  add('filebrowser','filebrowser/filebrowser:latest',{
+    ports:[`${g('filebrowser','port')}:80`],
+    vols:[`${g('filebrowser','rootPath')}:/srv`,`${g('filebrowser','cfgPath')}/filebrowser.db:/database.db`],
+  });
+  if(STATE.services.vaultwarden?.enabled){const cf=c('vaultwarden');
+    add('vaultwarden','vaultwarden/server:latest',{ports:[`${cf.port}:80`],
+      env:{ADMIN_TOKEN:f('vaultwarden','adminToken'),DOMAIN:cf.domain},
+      vols:[`${cf.dataPath}:/data`]});}
+  if(STATE.services.seafile?.enabled){const cf=c('seafile');
+    add('seafile','seafileltd/seafile-mc:latest',{ports:[`${cf.port}:80`],
+      env:{SEAFILE_ADMIN_EMAIL:f('seafile','adminEmail'),SEAFILE_ADMIN_PASSWORD:f('seafile','adminPass'),SEAFILE_SERVER_HOSTNAME:'localhost'},
+      vols:[`${cf.dataPath}:/shared`]});}
+
+  // ── Auth ──
+  add('authelia','authelia/authelia:latest',{ports:[`${g('authelia','port')}:9091`],vols:[`${g('authelia','cfgPath')}:/config`]});
+  if(STATE.services.keycloak?.enabled){const cf=c('keycloak');
+    add('keycloak','keycloak/keycloak:latest',{ports:[`${cf.port}:8080`],
+      env:{KEYCLOAK_ADMIN:f('keycloak','adminUser'),KEYCLOAK_ADMIN_PASSWORD:f('keycloak','adminPass')},
+      cmd:['start-dev'],vols:['keycloak_data:/opt/keycloak/data'],namedVols:['keycloak_data']});}
+  if(STATE.services.wgeasy?.enabled){const cf=c('wgeasy');
+    add('wgeasy','ghcr.io/wg-easy/wg-easy:latest',{ports:[`${cf.vpnPort}:51820/udp`,`${cf.uiPort}:51821/tcp`],
+      env:{WG_HOST:f('wgeasy','wgHost'),PASSWORD:f('wgeasy','pass')},
+      vols:['wgeasy_data:/etc/wireguard'],namedVols:['wgeasy_data'],
+      caps:['NET_ADMIN','SYS_MODULE'],extra:['    sysctls:','      - net.ipv4.conf.all.src_valid_mark=1','      - net.ipv4.ip_forward=1']});}
+  add('portainer_agent','portainer/agent:latest',{ports:[`${g('portainer_agent','port')}:9001`],vols:['/var/run/docker.sock:/var/run/docker.sock','/var/lib/docker/volumes:/var/lib/docker/volumes']});
+
+  // ── Monitoring ──
+  add('grafana','grafana/grafana:latest',{ports:[`${g('grafana','port')}:3000`],
+    env:{GF_SECURITY_ADMIN_USER:f('grafana','adminUser'),GF_SECURITY_ADMIN_PASSWORD:f('grafana','adminPass')},
+    vols:['grafana_data:/var/lib/grafana'],namedVols:['grafana_data']});
+  add('prometheus','prom/prometheus:latest',{ports:[`${g('prometheus','port')}:9090`],
+    vols:[`${g('prometheus','cfgPath')}:/etc/prometheus/prometheus.yml:ro`,'prometheus_data:/prometheus'],namedVols:['prometheus_data'],
+    cmd:['--config.file=/etc/prometheus/prometheus.yml','--storage.tsdb.path=/prometheus','--web.console.libraries=/usr/share/prometheus/console_libraries','--web.console.templates=/usr/share/prometheus/consoles']});
+  add('uptimekuma','louislam/uptime-kuma:latest',{ports:[`${g('uptimekuma','port')}:3001`],vols:[`${g('uptimekuma','dataPath')}:/app/data`]});
+  add('portainer','portainer/portainer-ce:latest',{ports:[`${g('portainer','httpPort')}:9000`,`${g('portainer','httpsPort')}:9443`],
+    vols:['/var/run/docker.sock:/var/run/docker.sock',`${g('portainer','dataPath')}:/data`]});
+  add('netdata','netdata/netdata:latest',{ports:[`${g('netdata','port')}:19999`],
+    vols:['/proc:/host/proc:ro','/sys:/host/sys:ro','/var/run/docker.sock:/var/run/docker.sock:ro'],caps:['SYS_PTRACE'],privileged:false});
+  add('cadvisor','gcr.io/cadvisor/cadvisor:latest',{ports:[`${g('cadvisor','port')}:8080`],
+    vols:['/:/rootfs:ro','/var/run:/var/run:ro','/sys:/sys:ro','/var/lib/docker/:/var/lib/docker:ro','/dev/disk/:/dev/disk:ro'],privileged:true});
+
+  // ── DevOps ──
+  add('gitea','gitea/gitea:latest',{ports:[`${g('gitea','httpPort')}:3000`,`${g('gitea','sshPort')}:22`],
+    env:{USER_UID:'1000',USER_GID:'1000'},vols:[`${g('gitea','dataPath')}:/data`]});
+  if(STATE.services.jenkins?.enabled){const cf=c('jenkins');
+    add('jenkins',`jenkins/jenkins:${cf.tag||'lts-jdk17'}`,{ports:[`${cf.httpPort}:8080`,`${cf.agentPort}:50000`],
+      env:{JAVA_OPTS:cf.javaOpts},vols:[`${cf.dataPath}:/var/jenkins_home`]});}
+  if(STATE.services.woodpecker?.enabled){const cf=c('woodpecker');
+    add('woodpecker','woodpeckerci/woodpecker-server:latest',{ports:[`${cf.port}:8000`,`${cf.grpcPort}:9000`],
+      env:{WOODPECKER_OPEN:'true',WOODPECKER_HOST:`http://localhost:${cf.port}`,WOODPECKER_GITEA:'true',WOODPECKER_GITEA_URL:cf.giteaUrl},
+      vols:[`${cf.dataPath}:/var/lib/woodpecker`]});}
+  add('registry','registry:2',{ports:[`${g('registry','port')}:5000`],vols:[`${g('registry','dataPath')}:/var/lib/registry`]});
+
+  // ── Chat ──
+  if(STATE.services.rocketchat?.enabled){const cf=c('rocketchat');
+    add('rocketchat','rocket.chat:latest',{ports:[`${cf.port}:3000`],
+      env:{MONGO_URL:cf.mongoUrl,MONGO_OPLOG_URL:`${cf.mongoUrl.split('/')[0]}//${cf.mongoUrl.split('//')[1]?.split('/')[0]}/local`,ROOT_URL:cf.rootUrl,PORT:'3000'}});}
+  if(STATE.services.matrix?.enabled){const cf=c('matrix');
+    add('matrix','matrixdotorg/synapse:latest',{ports:[`${cf.port}:8448`],
+      env:{SYNAPSE_SERVER_NAME:cf.serverName,SYNAPSE_REPORT_STATS:'no'},
+      vols:[`${cf.dataPath}:/data`]});}
+  if(STATE.services.mattermost?.enabled){const cf=c('mattermost');
+    add('mattermost','mattermost/mattermost-team-edition:latest',{ports:[`${cf.port}:8065`],
+      vols:[`${cf.dataPath}:/mattermost/data`,`${cf.cfgPath}:/mattermost/config`]});}
+  add('mailhog','mailhog/mailhog:latest',{ports:[`${g('mailhog','smtpPort')}:1025`,`${g('mailhog','webPort')}:8025`]});
+
+  // ── Misc ──
+  add('homer','b4bz/homer:latest',{ports:[`${g('homer','port')}:8080`],vols:[`${g('homer','cfgPath')}:/www/assets`]});
+  if(STATE.services.minecraft?.enabled){const cf=c('minecraft');
+    add('minecraft','itzg/minecraft-server:latest',{ports:[`${cf.port}:25565`],
+      env:{EULA:'TRUE',VERSION:cf.mcVersion,TYPE:cf.type,MEMORY:cf.memory},
+      vols:[`${cf.dataPath}:/data`]});}
+  if(STATE.services.watchtower?.enabled){const cf=c('watchtower');
+    add('watchtower','containrrr/watchtower:latest',{env:{WATCHTOWER_SCHEDULE:cf.schedule,WATCHTOWER_CLEANUP:'true'},
+      vols:['/var/run/docker.sock:/var/run/docker.sock']});}
+  add('whoami','traefik/whoami:latest',{ports:[`${g('whoami','port')}:80`]});
+
+  // ── Networks ──
+  allLines.push('');allLines.push('networks:');allLines.push('  app-network:');allLines.push('    driver: bridge');
+
+  // ── Volumes ──
+  if(allNamedVols.size){
+    allLines.push('');allLines.push('volumes:');
+    allNamedVols.forEach(v=>allLines.push(`  ${v}:`));
+  }
+
+  return allLines.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════
+// .ENV GENERATION
+// ═══════════════════════════════════════════════════════════
+function generateEnv(){
+  const lines=[`# .env — ${pn()}`,`# Generado: ${new Date().toLocaleDateString('es-ES')}`,`# ¡Añade este archivo a .gitignore!`,''];
+  let hasVars=false;
+  CATALOG.forEach(cat=>cat.services.forEach(svc=>{
+    if(!STATE.services[svc.id]?.enabled)return;
+    const envFields=svc.fields.filter(f=>f.envKey);
+    if(!envFields.length)return;
+    hasVars=true;
+    lines.push(`# ${svc.name}`);
+    envFields.forEach(f=>{
+      const v=STATE.services[svc.id].cfg[f.id]??f.default;
+      if(v!==''&&v!==null&&v!==undefined)lines.push(`${f.envKey}=${v}`);
+    });
+    lines.push('');
+  }));
+  if(!hasVars)lines.push('# No hay variables de entorno sensibles configuradas.');
+  return lines.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════
+// SYNTAX HIGHLIGHTING
+// ═══════════════════════════════════════════════════════════
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+function hlLine(raw){
+  const s=esc(raw);
+  if(/^\s*#/.test(s))return`<span class="yco">${s}</span>`;
+  // key: value
+  const m=s.match(/^(\s*)(- )?([a-zA-Z0-9_./-]+)(:)(.*)$/);
+  if(m){
+    let r=m[1];
+    if(m[2])r+=`<span class="ydd">- </span>`;
+    r+=`<span class="yk">${m[3]}</span>${m[4]}`;
+    r+=hlVal(m[5]);return r;
+  }
+  // list item
+  const m2=s.match(/^(\s*- )(.+)$/);
+  if(m2&&!m2[0].includes('<span'))return`<span class="ydd">${m2[1]}</span>${hlVal(' '+m2[2])}`;
+  return s;
+}
+
+function hlVal(s){
+  const t=s.trim();
+  if(!t)return s;
+  if(/^(true|false|yes|no)$/i.test(t))return` <span class="yb2">${s}</span>`;
+  if(/^-?\d+(\.\d+)?$/.test(t))return` <span class="yn2">${s}</span>`;
+  return` <span class="ys">${s}</span>`;
+}
+
+function buildHtml(text){
+  return text.split('\n').map((l,i)=>
+    `<span class="yl"><span class="yln">${i+1}</span><span class="ylc">${hlLine(l)}</span></span>`
+  ).join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════
+function renderPreview(){
+  const yaml=generateYAML();
+  const pre=document.getElementById('yamlPre');
+  const empty=document.getElementById('yamlEmpty');
+  if(!yaml){pre.style.display='none';empty.style.display='flex';return;}
+  pre.style.display='block';empty.style.display='none';
+  if(STATE.activeTab==='env'&&useEnv()){
+    pre.innerHTML=buildHtml(generateEnv());
+  }else{
+    pre.innerHTML=buildHtml(yaml);
+  }
+}
+
+function render(){
+  renderPreview();
+}
+
+// ═══════════════════════════════════════════════════════════
+// COPY / DOWNLOAD
+// ═══════════════════════════════════════════════════════════
+function copyContent(){
+  const text=STATE.activeTab==='env'&&useEnv()?generateEnv():generateYAML();
+  if(!text){toast('⚠️ Selecciona al menos un servicio');return;}
+  navigator.clipboard?.writeText(text).then(()=>toast('✅ Copiado al portapapeles')).catch(()=>{
+    const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();toast('✅ Copiado');
+  });
+}
+
+function downloadContent(){
+  const isEnv=STATE.activeTab==='env'&&useEnv();
+  const text=isEnv?generateEnv():generateYAML();
+  if(!text){toast('⚠️ Selecciona al menos un servicio');return;}
+  const fname=isEnv?'.env':'docker-compose.yml';
+  const blob=new Blob([text],{type:'text/plain'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+  URL.revokeObjectURL(url);
+  toast(`💾 Descargando ${fname}`);
+}
+
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PUENTE comeback — solo cuando MelodY corre embebido en un iframe
+// ═══════════════════════════════════════════════════════════
+const EMBEDDED = window.parent && window.parent !== window;
+
+function deployToComeback(){
+  const yaml=generateYAML();
+  if(!yaml){toast('⚠️ Selecciona al menos un servicio');return;}
+  const env=useEnv()?generateEnv():'';
+  window.parent.postMessage({type:'melody-deploy', name:pn(), yaml, env}, '*');
+  toast('🚀 Enviado a comeback');
+}
+
+if(EMBEDDED){
+  const b=document.getElementById('deployBtn');
+  if(b) b.style.display='inline-flex';
+  // permite a comeback forzar tema oscuro / reset desde el padre
+  window.addEventListener('message', e=>{
+    if(e.data?.type==='melody-clear' && typeof clearAll==='function') clearAll();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+buildCategoryNav();
+renderServiceGrid();
+updateChips();
+render();
+</script>
+</body>
+</html>
