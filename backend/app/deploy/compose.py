@@ -46,6 +46,25 @@ def _parse_labels(labels: Any) -> dict[str, str]:
     return result
 
 
+def _normalize_volume(v: str) -> str:
+    """Fix bind-mount sources that are missing their leading slash.
+
+    Docker treats `media/data:/x` as a *named volume* `media/data` (illegal —
+    slashes aren't allowed in volume names) instead of a host path. If the
+    source part contains a slash but isn't already absolute (`/`) or explicitly
+    relative (`./`, `../`, `~`), it was meant as an absolute host path → prepend
+    `/`. Named volumes (no slash in source) and absolute paths are untouched.
+    """
+    parts = v.split(":")
+    if len(parts) < 2:
+        return v   # not a bind/volume mapping
+    src = parts[0]
+    if "/" in src and not src.startswith(("/", "./", "../", "~")):
+        parts[0] = "/" + src
+        return ":".join(parts)
+    return v
+
+
 def _parse_ports(ports: list | None) -> dict:
     """
     Accepts short syntax strings: "host:container[/proto]" or "container[/proto]"
@@ -352,13 +371,22 @@ async def run_compose_deploy(job: Job, yaml_content: str, deploy_name: str) -> l
 
             restart_val = svc.get("restart", "unless-stopped")
 
+            norm_vols = []
+            for v in (svc.get("volumes") or []):
+                orig = str(v)
+                fixed = _normalize_volume(orig)
+                if fixed != orig:
+                    await job.log(LogLevel.warning,
+                                  f"Ruta de volumen corregida a absoluta: {orig} → {fixed}")
+                norm_vols.append(fixed)
+
             kwargs: dict[str, Any] = dict(
                 image=image,
                 name=container_name,
                 detach=True,
                 environment=_parse_env(svc.get("environment")),
                 ports=_parse_ports(svc.get("ports")),
-                volumes=[str(v) for v in (svc.get("volumes") or [])],
+                volumes=norm_vols,
                 restart_policy={"Name": restart_val},
                 labels=labels,
             )
