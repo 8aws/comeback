@@ -1,4 +1,7 @@
 const API = {
+  _csrf() {
+    return document.cookie.split('; ').find(c => c.startsWith('comeback_csrf='))?.split('=')[1] || '';
+  },
   _check(r) {
     if (r.status === 401 && typeof showLogin === 'function') showLogin();
     return r;
@@ -11,7 +14,7 @@ const API = {
   async post(url, body) {
     const r = API._check(await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': API._csrf() },
       body: JSON.stringify(body),
     }));
     if (!r.ok) throw new Error(await r.text());
@@ -20,14 +23,14 @@ const API = {
   async put(url, body) {
     const r = API._check(await fetch(url, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': API._csrf() },
       body: JSON.stringify(body),
     }));
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
   async del(url) {
-    const r = API._check(await fetch(url, { method: 'DELETE' }));
+    const r = API._check(await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-Token': API._csrf() } }));
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },

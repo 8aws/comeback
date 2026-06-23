@@ -68,7 +68,8 @@ def describe(sched: dict) -> dict:
     """Schedule dict enriched with next_run for the API/UI."""
     last = sched.get("last_run")
     base = datetime.fromisoformat(last) if last else datetime.now() - timedelta(days=8)
-    return {**sched, "next_run": _next_run(sched, max(base, datetime.now() - timedelta(minutes=1))).isoformat()}
+    return {**sched, "next_run": _next_run(sched, max(base, datetime.now() - timedelta(minutes=1))).isoformat(),
+            "last_status": sched.get("last_status")}
 
 
 def _is_due(sched: dict, now: datetime) -> bool:
@@ -139,9 +140,19 @@ async def run_schedule_now(sched: dict) -> str:
                          _label_for(sched))
         if job.status == JobStatus.success:
             await _apply_retention(sched, job)
+        _update_last_status(sched["id"], job.status)
 
     asyncio.create_task(_run())
     return job.id
+
+
+def _update_last_status(sched_id: str, status: JobStatus):
+    schedules = load_schedules()
+    for s in schedules:
+        if s["id"] == sched_id:
+            s["last_status"] = str(status)
+            break
+    save_schedules(schedules)
 
 
 async def scheduler_loop():

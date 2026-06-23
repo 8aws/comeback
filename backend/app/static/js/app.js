@@ -140,6 +140,7 @@ function openJobModal(jobId, title) {
     footer.style.display = 'flex';
     stopPolling();
     if (state.tab === 'backup' || state.tab === 'restore') loadBackups();
+    if (state.tab === 'updates') loadUpdates();
   }
 
   function stopPolling() {
@@ -635,7 +636,7 @@ async function loadSchedules() {
         </div>
         <div class="text-muted text-sm" style="margin-top:4px">
           ${freq} · ${s.container_ids.length} contenedor(es) · retención ${s.retention}<br>
-          Próxima: ${fmt(s.next_run)}${s.last_run ? ` · Última: ${fmt(s.last_run)}` : ''}
+          Próxima: ${fmt(s.next_run)}${s.last_run ? ` · Última: ${fmt(s.last_run)}${s.last_status ? ` ${s.last_status === 'success' ? '✅' : '❌'}` : ''}` : ''}
         </div>
       </div>`;
     }).join('');
@@ -794,6 +795,7 @@ function uploadBackup(input) {
 
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/backups/upload');
+  xhr.setRequestHeader('X-CSRF-Token', API._csrf());
   xhr.upload.onprogress = (e) => {
     if (e.lengthComputable) {
       const pct = Math.round((e.loaded / e.total) * 100);
@@ -1757,14 +1759,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   navigate('backup');
 
-  // Poll only while there are running jobs
+  // Poll only while there are running jobs; notify on completion
   let _pollActive = false;
+  let _trackedRunning = new Set();
   async function tickJobsBadge() {
     const jobs = await API.jobs.list().catch(() => []);
-    const running = jobs.filter(j => j.status === 'running').length;
+    const runningJobs = jobs.filter(j => j.status === 'running');
+    const runningIds = new Set(runningJobs.map(j => j.id));
     const badge = document.getElementById('jobs-badge');
-    if (running > 0) {
-      badge.textContent = running;
+    const modalOpen = document.getElementById('job-modal').style.display === 'flex';
+
+    for (const id of _trackedRunning) {
+      if (!runningIds.has(id)) {
+        const j = jobs.find(x => x.id === id);
+        if (j && !(modalOpen && state.activeJobId === id)) {
+          const icon = j.status === 'success' ? '✅' : '❌';
+          showToast(`${icon} ${j.label} — ${j.status}`, j.status === 'success' ? 'success' : 'error');
+        }
+      }
+    }
+    _trackedRunning = runningIds;
+
+    if (runningJobs.length > 0) {
+      badge.textContent = runningJobs.length;
       badge.style.display = 'inline-flex';
       if (state.tab === 'jobs') { state.jobs = jobs; renderJobs(); }
       setTimeout(tickJobsBadge, 2000);

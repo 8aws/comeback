@@ -567,9 +567,23 @@ Do **not** use `db_file.stem` here — `.stem` strips only one extension, so `mo
 
 Single-user session auth (`app/auth.py`). Enabled when `AUTH_PASSWORD`, `AUTH_PASSWORD_HASH` or a UI-set password exist; otherwise the API is open (warning logged at startup). Password precedence: `/backups/.auth.json` (UI change, bcrypt) → `AUTH_PASSWORD_HASH` env (bcrypt) → `AUTH_PASSWORD` env (plain, constant-time compare). Sessions: in-memory token → expiry (24h sliding), HttpOnly SameSite=Lax cookie `comeback_session`; works for the WebSocket too (cookie validated before accept, close 4401). Brute force: 1s delay per failed login, IP locked 15 min after 5 failures (cleared on success). The HTTP middleware guards everything under `/api/` except `/api/auth/*`; the SPA and static files stay public. A server restart clears all sessions (in-memory).
 
+**CSRF protection**: double-submit cookie pattern. On login, the server sets a non-HttpOnly `comeback_csrf` cookie containing a random token (also stored in the session). The frontend reads it via `document.cookie` and sends it as `X-CSRF-Token` header on every POST/PUT/DELETE. The middleware validates the header matches the session's CSRF token. Auth endpoints (`/api/auth/*`) are exempt.
+
 ### Background scheduler
 
-`scheduler_loop()` (started on FastAPI startup) checks every 60s whether a schedule is due, interpreting `time` in the container TZ (tzdata installed in the image). Schedules persist in `/backups/.schedules.json`. A schedule created after today's slot waits for the next occurrence (`created_at` guard). Retention: after a successful run, archives whose manifest label equals `⏰ {name}` beyond the newest N are deleted. The in-memory JobManager persists finished jobs (with logs) to `/backups/.jobs/jobs.jsonl`, reloading the last 200 lazily.
+`scheduler_loop()` (started on FastAPI startup) checks every 60s whether a schedule is due, interpreting `time` in the container TZ (tzdata installed in the image). Schedules persist in `/backups/.schedules.json`. A schedule created after today's slot waits for the next occurrence (`created_at` guard). Retention: after a successful run, archives whose manifest label equals `⏰ {name}` beyond the newest N are deleted. The in-memory JobManager persists finished jobs (with logs) to `/backups/.jobs/jobs.jsonl`, reloading the last 200 lazily. After each scheduled run, `last_status` (success/failed) is persisted in the schedule entry and shown in the UI with a ✅/❌ indicator.
+
+### Image pull retry
+
+`_pull_with_progress` (in `deploy/compose.py`) retries failed pulls up to 3 times with delays of 5s, 15s, 30s. This covers transient registry timeouts during deploy, restore, and update flows. After exhausting retries, the error propagates to the caller (which may trigger rollback).
+
+### Upload size limit
+
+The `/api/backups/upload` endpoint enforces `MAX_UPLOAD_BYTES` (default 10 GB) during streaming — the upload is aborted mid-transfer if the limit is exceeded, preventing volume exhaustion from oversized or malicious uploads.
+
+### Background job notifications
+
+The frontend tracks running job IDs via the badge polling loop. When a job transitions from running to finished and the job modal is not showing that job, a toast notification appears with the job label and status (✅/❌).
 
 ### Self-update limitation
 
@@ -588,6 +602,7 @@ Comeback detects its own container (short id from `/etc/hostname` vs container i
 | `AUTH_PASSWORD` | *(empty)* | Plain login password; empty (and no hash) = API open |
 | `AUTH_PASSWORD_HASH` | *(empty)* | bcrypt hash, takes precedence over `AUTH_PASSWORD` |
 | `INSTANCE_NAME` | *(host hostname)* | Label shown on login/header/manifests; falls back to `/host/etc/hostname` |
+| `MAX_UPLOAD_BYTES` | `10737418240` (10 GB) | Maximum upload size for backup import |
 
 Loaded via `pydantic-settings` (`Settings` class in `app/config.py`). Can also be set via a `.env` file for local development.
 

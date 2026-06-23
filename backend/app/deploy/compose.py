@@ -128,10 +128,13 @@ def _pull_if_needed(client, image: str):
         client.images.pull(image)
 
 
+PULL_MAX_RETRIES = 3
+PULL_RETRY_DELAYS = [5, 15, 30]
+
+
 async def _pull_with_progress(client, image: str, job: Job, force: bool = False):
     """
-    Pull image streaming real-time progress per layer:
-      "php:7-apache — 45.2 MB / 120.0 MB (37%) @ 3.1 MB/s"
+    Pull image streaming real-time progress per layer with retry on failure.
     Uses client.api (low-level APIClient) for streaming events.
     Runs the blocking iterator in a thread executor so the event loop
     stays free for WebSocket messages.
@@ -188,8 +191,20 @@ async def _pull_with_progress(client, image: str, job: Job, force: bool = False)
                 asyncio.run_coroutine_threadsafe(job.log(LogLevel.info, msg), loop)
                 last_log = now
 
-    await loop.run_in_executor(None, _stream)
-    await job.log(LogLevel.success, f"Imagen lista: {image}")
+    last_err = None
+    for attempt in range(PULL_MAX_RETRIES):
+        try:
+            await loop.run_in_executor(None, _stream)
+            await job.log(LogLevel.success, f"Imagen lista: {image}")
+            return
+        except Exception as e:
+            last_err = e
+            if attempt < PULL_MAX_RETRIES - 1:
+                delay = PULL_RETRY_DELAYS[attempt]
+                await job.log(LogLevel.warning,
+                    f"Pull fallido ({e}), reintentando en {delay}s… ({attempt + 1}/{PULL_MAX_RETRIES})")
+                await asyncio.sleep(delay)
+    raise RuntimeError(f"Pull de {image} fallido tras {PULL_MAX_RETRIES} intentos: {last_err}")
 
 
 def _build_image(client, tar_bytes: bytes, tag: str):

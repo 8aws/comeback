@@ -93,6 +93,7 @@ async def upload_backup(file: UploadFile) -> dict:
     if not name.endswith(".tar.gz"):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos .tar.gz")
 
+    max_bytes = settings.max_upload_bytes
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     dest = settings.backup_dir / name
     if dest.exists():
@@ -107,6 +108,9 @@ async def upload_backup(file: UploadFile) -> dict:
             while chunk := await file.read(1024 * 1024):
                 sha.update(chunk)
                 size += len(chunk)
+                if size > max_bytes:
+                    raise HTTPException(status_code=413,
+                        detail=f"Archivo demasiado grande (máx {max_bytes // (1024**3)} GB)")
                 await out.write(chunk)
 
         manifest = _read_manifest_from_archive(tmp)

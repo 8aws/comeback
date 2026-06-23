@@ -3,7 +3,7 @@ import socket
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
-APP_VERSION = "1.10.3"
+APP_VERSION = "1.11.0"
 
 
 class Settings(BaseSettings):
@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     auth_password: str = ""        # empty → auth disabled (warning at startup)
     auth_password_hash: str = ""   # bcrypt hash; takes precedence over auth_password
     instance_name: str = ""        # label to tell installations apart; empty → host hostname
+    max_upload_bytes: int = 10 * 1024 * 1024 * 1024   # 10 GB
 
     @property
     def effective_instance_name(self) -> str:

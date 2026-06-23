@@ -24,6 +24,7 @@ from .config import settings
 logger = logging.getLogger("comeback.auth")
 
 COOKIE_NAME = "comeback_session"
+CSRF_COOKIE = "comeback_csrf"
 SESSION_HOURS = 24
 MAX_FAILURES = 5
 LOCKOUT_MINUTES = 15
@@ -76,10 +77,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_session() -> str:
+def create_session() -> tuple[str, str]:
     token = secrets.token_urlsafe(32)
-    _sessions[token] = _now() + timedelta(hours=SESSION_HOURS)
-    return token
+    csrf = secrets.token_urlsafe(32)
+    _sessions[token] = {"expiry": _now() + timedelta(hours=SESSION_HOURS), "csrf": csrf}
+    return token, csrf
 
 
 def validate_session(token: str | None) -> bool:
@@ -87,15 +89,26 @@ def validate_session(token: str | None) -> bool:
         return True
     if not token:
         return False
-    expiry = _sessions.get(token)
-    if not expiry:
+    sess = _sessions.get(token)
+    if not sess:
         return False
-    if _now() > expiry:
+    if _now() > sess["expiry"]:
         _sessions.pop(token, None)
         return False
-    # sliding expiry — active sessions stay alive
-    _sessions[token] = _now() + timedelta(hours=SESSION_HOURS)
+    sess["expiry"] = _now() + timedelta(hours=SESSION_HOURS)
     return True
+
+
+def validate_csrf(request: Request) -> bool:
+    """Double-submit cookie: X-CSRF-Token header must match the csrf cookie value."""
+    if not auth_enabled():
+        return True
+    token = request.cookies.get(COOKIE_NAME)
+    sess = _sessions.get(token) if token else None
+    if not sess:
+        return False
+    header_csrf = request.headers.get("X-CSRF-Token", "")
+    return secrets.compare_digest(header_csrf, sess["csrf"])
 
 
 def destroy_session(token: str | None):
@@ -184,10 +197,15 @@ async def login(body: LoginRequest, request: Request, response: Response):
         })
 
     _failures.pop(ip, None)
-    token = create_session()
+    token, csrf = create_session()
     response.set_cookie(
         COOKIE_NAME, token,
         httponly=True, samesite="lax", path="/",
+        max_age=SESSION_HOURS * 3600,
+    )
+    response.set_cookie(
+        CSRF_COOKIE, csrf,
+        httponly=False, samesite="lax", path="/",
         max_age=SESSION_HOURS * 3600,
     )
     logger.info("Login OK from %s", ip)
@@ -222,10 +240,11 @@ async def change_password(body: ChangePasswordRequest, request: Request, respons
             "detail": "La nueva contraseña debe tener al menos 8 caracteres"})
 
     set_password(body.new_password)
-    # Invalidate every session, then re-issue one for this client
     _sessions.clear()
-    token = create_session()
+    token, csrf = create_session()
     response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax",
+                        path="/", max_age=SESSION_HOURS * 3600)
+    response.set_cookie(CSRF_COOKIE, csrf, httponly=False, samesite="lax",
                         path="/", max_age=SESSION_HOURS * 3600)
     logger.info("Password changed from %s — all other sessions invalidated",
                 _client_ip(request))

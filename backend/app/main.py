@@ -23,6 +23,8 @@ async def require_auth(request: Request, call_next):
     if path.startswith("/api/") and not path.startswith("/api/auth/"):
         if not auth.is_authenticated(request):
             return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        if request.method in ("POST", "PUT", "DELETE") and not auth.validate_csrf(request):
+            return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid"})
     return await call_next(request)
 
 
