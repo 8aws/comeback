@@ -31,9 +31,11 @@ def client():
 
 @pytest.fixture
 def auth_client(client):
-    """Client with auth enabled and already logged in."""
+    """Client with auth enabled, logged in, and CSRF token set."""
     settings.auth_password = "secret123"
     r = client.post("/api/auth/login",
                     json={"username": "admin", "password": "secret123"})
     assert r.status_code == 200
+    csrf = r.cookies.get("comeback_csrf", "")
+    client.headers["X-CSRF-Token"] = csrf
     return client
