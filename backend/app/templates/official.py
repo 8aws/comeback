@@ -28,6 +28,14 @@ class SingleContainerTemplate(BaseTemplate):
         """Host paths that must exist before the container starts."""
         return []
 
+    def host_files(self, cfg: dict) -> dict[str, str]:
+        """Files to write on the host before starting. {host_path: content}."""
+        return {}
+
+    async def post_setup(self, job: Job, cfg: dict) -> None:
+        """Hook called after dirs/files are created, before container start."""
+        pass
+
     def success_notes(self, cfg: dict) -> list[str]:
         return []
 
@@ -41,11 +49,18 @@ class SingleContainerTemplate(BaseTemplate):
         created = False
 
         try:
-            await job.set_progress(5, "Preparando directorios…")
+            await job.set_progress(5, "Preparando directorios y configuración…")
             for d in self.host_dirs(config):
                 p = Path(f"/host{d}")
                 await loop.run_in_executor(None, lambda p=p: p.mkdir(parents=True, exist_ok=True))
                 await job.log(LogLevel.info, f"Directorio: {d}")
+            for fpath, content in self.host_files(config).items():
+                p = Path(f"/host{fpath}")
+                await loop.run_in_executor(None, lambda p=p: p.parent.mkdir(parents=True, exist_ok=True))
+                await loop.run_in_executor(None, lambda p=p, c=content: p.write_text(c))
+                await job.log(LogLevel.info, f"Archivo: {fpath}")
+
+            await self.post_setup(job, config)
 
             await job.set_progress(10, f"Descargando {self.image}…")
             await _pull_with_progress(client, self.image, job)
