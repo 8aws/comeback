@@ -82,7 +82,8 @@ function openJobModal(jobId, title) {
 
   const spinner = modal.querySelector('.spinner');
   const resultIcon = modal.querySelector('.job-result-icon');
-  const footer = modal.querySelector('.job-modal-footer');
+  const cancelBtn = modal.querySelector('.job-modal-cancel');
+  const okBtn = modal.querySelector('.job-modal-ok');
 
   logViewer.innerHTML = '';
   progressBar.style.width = '0%';
@@ -91,7 +92,10 @@ function openJobModal(jobId, title) {
   statusEl.className = 'job-status-inline job-status running';
   spinner.style.display = '';
   resultIcon.style.display = 'none';
-  footer.style.display = 'none';
+  cancelBtn.style.display = '';
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = '✕ Cancelar';
+  okBtn.style.display = 'none';
 
   modal.style.display = 'flex';
 
@@ -135,9 +139,10 @@ function openJobModal(jobId, title) {
     statusEl.textContent = status;
     statusEl.className = `job-status-inline job-status ${status}`;
     spinner.style.display = 'none';
-    resultIcon.textContent = status === 'success' ? '✅' : status === 'failed' ? '❌' : '⚠️';
+    resultIcon.textContent = status === 'success' ? '✅' : status === 'failed' ? '❌' : status === 'cancelled' ? '🛑' : '⚠️';
     resultIcon.style.display = '';
-    footer.style.display = 'flex';
+    cancelBtn.style.display = 'none';
+    okBtn.style.display = '';
     stopPolling();
     if (state.tab === 'backup' || state.tab === 'restore') loadBackups();
     if (state.tab === 'updates') loadUpdates();
@@ -208,7 +213,20 @@ function openJobModal(jobId, title) {
     modal.style.display = 'none';
   };
   modal.querySelector('.modal-close').onclick = closeModal;
-  modal.querySelector('.job-modal-ok').onclick = closeModal;
+  okBtn.onclick = closeModal;
+
+  cancelBtn.onclick = async () => {
+    if (!confirm('¿Cancelar el job en curso?')) return;
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = '⏳ Cancelando…';
+    try {
+      await API.del(`/api/jobs/${jobId}`);
+    } catch (e) {
+      showToast(`No se pudo cancelar: ${e.message}`, 'error');
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = '✕ Cancelar';
+    }
+  };
 }
 
 // ─── BACKUP TAB ───────────────────────────────────────────────────────────────

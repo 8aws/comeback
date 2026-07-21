@@ -140,7 +140,7 @@ async def upload_backup(file: UploadFile) -> dict:
 @router.post("/start")
 async def start_backup(req: BackupRequest) -> dict:
     job = job_manager.create(JobType.backup, f"Backup of {len(req.container_ids)} container(s)")
-    asyncio.create_task(run_backup(
+    job._task = asyncio.create_task(run_backup(
         job,
         req.container_ids,
         req.include_images,

@@ -88,6 +88,7 @@ const API = {
   jobs: {
     list: () => API.get('/api/jobs'),
     get: (id) => API.get(`/api/jobs/${id}`),
+    cancel: (id) => API.del(`/api/jobs/${id}`),
     ws: (id) => {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       return new WebSocket(`${proto}//${location.host}/api/jobs/${id}/ws`);

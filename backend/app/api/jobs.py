@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from ..auth import COOKIE_NAME, validate_session
 from ..job_manager import job_manager
-from ..models import JobStatus
+from ..models import JobStatus, LogLevel
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -20,6 +20,19 @@ def get_job(job_id: str):
         **job.to_dict(),
         "logs": [e.model_dump(mode="json") for e in job.logs],
     }
+
+
+@router.delete("/{job_id}")
+async def cancel_job(job_id: str):
+    job = job_manager.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in (JobStatus.pending, JobStatus.running):
+        raise HTTPException(status_code=409, detail=f"Job already {job.status}")
+    await job.log(LogLevel.warning, "Cancelación solicitada por el usuario")
+    job.cancel()
+    await job.finish(JobStatus.cancelled, {"cancelled_by": "user"})
+    return {"cancelled": job_id}
 
 
 @router.websocket("/{job_id}/ws")

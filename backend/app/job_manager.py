@@ -27,6 +27,7 @@ class Job:
         self.progress: int = 0
         self._subscribers: list[asyncio.Queue] = []
         self._task: Optional[asyncio.Task] = None
+        self._cancel_requested: bool = False
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()
@@ -58,6 +59,15 @@ class Job:
         self.finished_at = datetime.utcnow()
         await self._broadcast({"type": "finished", "status": status, "summary": summary})
         job_manager._persist(self)
+
+    def cancel(self):
+        """Request cancellation. The running coroutine must check is_cancelled()."""
+        self._cancel_requested = True
+        if self._task and not self._task.done():
+            self._task.cancel()
+
+    def is_cancelled(self) -> bool:
+        return self._cancel_requested
 
     def to_dict(self) -> dict:
         return {

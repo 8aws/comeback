@@ -23,7 +23,7 @@ async def start_restore(req: RestoreRequest) -> dict:
     prefix = req.name_prefix or ""
     label = f"[{prefix}] " if prefix else ""
     job = job_manager.create(JobType.restore, f"{label}Restore from {req.backup_id}")
-    asyncio.create_task(run_restore(
+    job._task = asyncio.create_task(run_restore(
         job,
         archive,
         req.container_names,

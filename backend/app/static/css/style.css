@@ -268,7 +268,7 @@ main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; }
 }
 
 .log-viewer {
-  background: #0a0e14;
+  background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -280,7 +280,7 @@ main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; }
 }
 
 .log-line { display: flex; gap: 10px; }
-.log-ts { color: #444d56; flex-shrink: 0; }
+.log-ts { color: var(--text-muted); flex-shrink: 0; }
 .log-level { flex-shrink: 0; width: 56px; }
 .log-level.info { color: var(--blue-hover); }
 .log-level.success { color: var(--success); }

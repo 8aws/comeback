@@ -31,7 +31,7 @@ async def check_single(container_id: str) -> dict:
 @router.post("/start")
 async def start_update(req: UpdateRequest) -> dict:
     job = job_manager.create(JobType.update, f"Update: {req.container_id}")
-    asyncio.create_task(run_update(job, req.container_id, req.backup_first))
+    job._task = asyncio.create_task(run_update(job, req.container_id, req.backup_first))
     return {"job_id": job.id}
 
 
@@ -41,5 +41,5 @@ async def start_update_all(req: BulkUpdateRequest) -> dict:
         raise HTTPException(status_code=400, detail="container_ids vacío")
     job = job_manager.create(
         JobType.update, f"Update masivo: {len(req.container_ids)} contenedor(es)")
-    asyncio.create_task(run_update_all(job, req.container_ids, req.backup_first))
+    job._task = asyncio.create_task(run_update_all(job, req.container_ids, req.backup_first))
     return {"job_id": job.id}
