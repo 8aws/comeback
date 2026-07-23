@@ -11,6 +11,7 @@ import asyncio
 from .api import containers, backup, restore, jobs, cleanup, deploy, schedules, stats, updates
 from .config import APP_VERSION, settings
 from .scheduler import scheduler_loop
+from . import ui_settings
 
 logger = logging.getLogger("comeback")
 
@@ -57,6 +58,50 @@ def system_info():
         "instance_name": settings.effective_instance_name,
         "tz": settings.tz,
     }
+
+
+@app.get("/api/settings")
+def get_ui_settings():
+    return ui_settings.load()
+
+
+@app.post("/api/settings")
+def save_ui_settings(body: dict):
+    ui_settings.save(body)
+    return ui_settings.load()
+
+
+@app.post("/api/system/estimate-sizes")
+async def estimate_sizes(body: dict):
+    """Quick disk-usage estimate for a list of host paths (accessed via /host).
+    Each path is measured with `du -s` with a 3-second timeout.
+    Returns {path: size_bytes} — null means timed out or not accessible.
+    """
+    import asyncio as _aio
+    import subprocess
+
+    paths: list[str] = body.get("paths", [])
+    host_root = settings.host_root
+
+    async def _du(path: str):
+        host_path = f"{host_root}{path}"
+        try:
+            proc = await _aio.create_subprocess_exec(
+                "du", "-s", "--block-size=1", host_path,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            )
+            try:
+                stdout, _ = await _aio.wait_for(proc.communicate(), timeout=3)
+                size = int(stdout.decode().split()[0])
+                return path, size
+            except _aio.TimeoutError:
+                proc.kill()
+                return path, None
+        except Exception:
+            return path, None
+
+    results = await _aio.gather(*(_du(p) for p in paths))
+    return {p: s for p, s in results}
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

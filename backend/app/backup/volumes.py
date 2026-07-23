@@ -77,9 +77,16 @@ async def backup_bind_mount(source_path: str, dest_dir: Path, job, host_root: st
     return {"source": source_path, "type": "bind", "archive": safe_name, "size": size}
 
 
-async def backup_all_volumes(container_spec: dict, dest_dir: Path, job, host_root: str) -> list[dict]:
+async def backup_all_volumes(
+    container_spec: dict,
+    dest_dir: Path,
+    job,
+    host_root: str,
+    excluded_bind_mounts: list[str] | None = None,
+) -> list[dict]:
     results = []
     seen: set[str] = set()
+    excluded = set(excluded_bind_mounts or [])
 
     for mount in container_spec.get("mounts", []):
         mtype = mount.get("type")
@@ -98,6 +105,15 @@ async def backup_all_volumes(container_spec: dict, dest_dir: Path, job, host_roo
             source = mount.get("source", "")
             if source and source not in seen:
                 seen.add(source)
+                if source in excluded:
+                    await job.log(LogLevel.warning,
+                        f"Bind mount excluido (configuración de backup): {source}")
+                    results.append({
+                        "type": "bind", "source": source,
+                        "destination": mount.get("destination"),
+                        "excluded": True,
+                    })
+                    continue
                 try:
                     r = await backup_bind_mount(source, dest_dir, job, host_root)
                     if r:

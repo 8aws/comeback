@@ -581,21 +581,138 @@ function updateSelectionInfo() {
 async function startBackup() {
   const n = state.selectedContainers.size;
   if (!n) return;
+  await openBackupConfig();
+}
 
-  const includeImages = document.getElementById('opt-images').checked;
-  const label = document.getElementById('opt-label').value.trim() || null;
+// ─── BACKUP CONFIG MODAL ──────────────────────────────────────────────────────
+let _backupBindChecks = [];   // [{source, checked}]
 
+async function openBackupConfig() {
+  // Collect all bind mounts from selected containers
+  const selected = [...state.selectedContainers];
+  const containers = (state.containers || []).filter(c =>
+    selected.includes(c.id) || selected.includes(c.name)
+  );
+
+  // Build deduplicated bind mount list
+  const bindSeen = new Set();
+  const bindMounts = [];
+  for (const c of containers) {
+    for (const v of (c.volumes || [])) {
+      if (v.type === 'bind' && v.source && !bindSeen.has(v.source)) {
+        bindSeen.add(v.source);
+        bindMounts.push({ source: v.source, container: c.name });
+      }
+    }
+  }
+
+  // Load threshold from settings
+  let maxGb = 10;
+  try {
+    const s = await API.settings.load();
+    maxGb = s.max_bind_mount_backup_gb ?? 10;
+  } catch (_) {}
+
+  // Default: all checked (unknown size → include by default)
+  _backupBindChecks = bindMounts.map(b => ({ ...b, checked: true, size: null }));
+
+  // Render modal
+  const bindSection = document.getElementById('bk-bind-section');
+  const bindList = document.getElementById('bk-bind-list');
+  bindList.innerHTML = '';
+
+  if (bindMounts.length) {
+    bindSection.style.display = 'block';
+    _backupBindChecks.forEach((b, i) => {
+      const row = document.createElement('label');
+      row.className = 'form-check';
+      row.style.cursor = 'pointer';
+      row.innerHTML = `
+        <input type="checkbox" data-bind-idx="${i}" ${b.checked ? 'checked' : ''}>
+        <div style="min-width:0">
+          <div class="text-sm" style="word-break:break-all">${b.source}</div>
+          <div class="text-xs text-muted">${b.container} · <span id="bk-size-${i}">calculando…</span></div>
+        </div>`;
+      row.querySelector('input').addEventListener('change', e => {
+        _backupBindChecks[i].checked = e.target.checked;
+      });
+      bindList.appendChild(row);
+    });
+    document.getElementById('bk-size-note').style.display = 'block';
+
+    // Estimate sizes in background then auto-uncheck by threshold
+    API.system.estimateSizes(bindMounts.map(b => b.source)).then(sizes => {
+      document.getElementById('bk-size-note').style.display = 'none';
+      _backupBindChecks.forEach((b, i) => {
+        const bytes = sizes[b.source];
+        b.size = bytes;
+        const el = document.getElementById(`bk-size-${i}`);
+        if (el) {
+          el.textContent = bytes != null ? _humanSize(bytes) : 'tamaño desconocido';
+        }
+        // Auto-uncheck if larger than threshold
+        if (bytes != null && bytes > maxGb * 1024 * 1024 * 1024) {
+          b.checked = false;
+          const cb = bindList.querySelector(`[data-bind-idx="${i}"]`);
+          if (cb) cb.checked = false;
+        }
+      });
+    }).catch(() => {
+      document.getElementById('bk-size-note').style.display = 'none';
+      _backupBindChecks.forEach((_, i) => {
+        const el = document.getElementById(`bk-size-${i}`);
+        if (el) el.textContent = 'tamaño desconocido';
+      });
+    });
+  } else {
+    bindSection.style.display = 'none';
+  }
+
+  // Sync opt-images/opt-label into modal fields
+  document.getElementById('bk-include-images').checked =
+    document.getElementById('opt-images')?.checked ?? false;
+  document.getElementById('bk-label').value =
+    document.getElementById('opt-label')?.value?.trim() ?? '';
+
+  const summary = `${containers.length} contenedor(es) seleccionado(s)`;
+  document.getElementById('bk-containers-summary').textContent = summary;
+
+  document.getElementById('backup-config-modal').style.display = 'flex';
+}
+
+function closeBackupConfig() {
+  document.getElementById('backup-config-modal').style.display = 'none';
+}
+
+async function confirmBackup() {
+  const n = state.selectedContainers.size;
+  const includeImages = document.getElementById('bk-include-images').checked;
+  const label = document.getElementById('bk-label').value.trim() || null;
+  const excluded = _backupBindChecks
+    .filter(b => !b.checked)
+    .map(b => b.source);
+
+  closeBackupConfig();
   try {
     const { job_id } = await API.backups.start({
       container_ids: [...state.selectedContainers],
       include_images: includeImages,
       label,
+      excluded_bind_mounts: excluded,
     });
     openJobModal(job_id, `Backup — ${n} container(s)`);
     window._scheduleJobPoll?.();
   } catch (e) {
     showToast(`Backup error: ${e.message}`, 'error');
   }
+}
+
+function _humanSize(bytes) {
+  if (bytes == null) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
 // ─── SCHEDULED BACKUPS ────────────────────────────────────────────────────────
@@ -1526,9 +1643,18 @@ function openSettings() {
     document.getElementById('settings-version').textContent = `v${info.version}`;
     document.getElementById('settings-instance').textContent = info.instance_name;
   }).catch(() => {});
+  API.settings.load().then(s => {
+    document.getElementById('settings-max-bind-gb').value = s.max_bind_mount_backup_gb ?? 10;
+  }).catch(() => {});
 }
 
 function closeSettings() {
+  // Save UI settings before closing
+  const gbInput = document.getElementById('settings-max-bind-gb');
+  const gb = parseInt(gbInput?.value, 10);
+  if (!isNaN(gb) && gb > 0) {
+    API.settings.save({ max_bind_mount_backup_gb: gb }).catch(() => {});
+  }
   document.getElementById('settings-modal').style.display = 'none';
   document.getElementById('pw-error').style.display = 'none';
   ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => document.getElementById(id).value = '');

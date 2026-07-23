@@ -145,5 +145,6 @@ async def start_backup(req: BackupRequest) -> dict:
         req.container_ids,
         req.include_images,
         req.label,
+        req.excluded_bind_mounts or [],
     ))
     return {"job_id": job.id}

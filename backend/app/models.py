@@ -65,6 +65,7 @@ class BackupRequest(BaseModel):
     include_images: bool = False
     compress: bool = True
     label: Optional[str] = None
+    excluded_bind_mounts: list[str] = []   # host source paths to skip (e.g. ["/share/Multimedia"])
 
 
 class UpdateRequest(BaseModel):

@@ -25,7 +25,7 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-async def run_backup(job: Job, container_ids: list[str], include_images: bool, label: str | None):
+async def run_backup(job: Job, container_ids: list[str], include_images: bool, label: str | None, excluded_bind_mounts: list[str] | None = None):
     job.started_at = datetime.utcnow()
     job.status = JobStatus.running
 
@@ -103,7 +103,7 @@ async def run_backup(job: Job, container_ids: list[str], include_images: bool, l
             await job.log(LogLevel.info, f"Found {len(mounts)} mount(s): {[m.get('name') or m.get('source') for m in mounts]}")
         else:
             await job.log(LogLevel.info, "No volumes or bind mounts found for this container")
-        vol_results = await backup_all_volumes(spec, volumes_dir, job, settings.host_root)
+        vol_results = await backup_all_volumes(spec, volumes_dir, job, settings.host_root, excluded_bind_mounts)
         all_volumes.extend(vol_results)
 
         # Databases

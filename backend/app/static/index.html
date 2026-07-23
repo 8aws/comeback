@@ -584,6 +584,18 @@
         </div>
       </div>
 
+      <div>
+        <div class="form-label" style="margin-bottom:6px">Backup de bind mounts</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="text-muted text-sm" style="flex:1">Marcar automáticamente como excluidos los bind mounts mayores de</span>
+          <input id="settings-max-bind-gb" type="number" min="1" max="9999" step="1" value="10"
+            style="width:70px;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+                   padding:5px 8px;border-radius:6px;font-size:13px;text-align:right">
+          <span class="text-muted text-sm">GB</span>
+        </div>
+        <div class="text-sm text-muted" style="margin-top:4px">El usuario puede anular los checks en cada backup</div>
+      </div>
+
       <label class="form-check" style="cursor:pointer">
         <input id="settings-monitoring" type="checkbox" onchange="setMonitoring(this.checked)">
         <div>
@@ -607,6 +619,49 @@
       </div>
 
       <button class="btn btn-danger" onclick="doLogout()" style="justify-content:center">🚪 Cerrar sesión</button>
+    </div>
+  </div>
+</div>
+
+<!-- Backup config modal -->
+<div id="backup-config-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3>💾 Configurar backup</h3>
+      <button class="modal-close" onclick="closeBackupConfig()">×</button>
+    </div>
+    <div class="modal-body" style="display:grid;gap:16px">
+      <div id="bk-containers-summary" class="text-muted text-sm"></div>
+
+      <div id="bk-bind-section" style="display:none">
+        <div class="form-label" style="margin-bottom:8px">Bind mounts detectados</div>
+        <div class="text-sm text-muted" style="margin-bottom:10px">
+          Los marcados se incluirán en el backup. Los desmarcados quedan registrados en el manifest como excluidos.
+        </div>
+        <div id="bk-bind-list" style="display:grid;gap:6px"></div>
+        <div id="bk-size-note" class="text-sm text-muted" style="margin-top:8px;display:none">
+          ⏳ Estimando tamaños…
+        </div>
+      </div>
+
+      <label class="form-check" style="cursor:pointer">
+        <input id="bk-include-images" type="checkbox">
+        <div>
+          <div>Incluir imágenes Docker</div>
+          <div class="text-sm text-muted">Exporta los .tar de imagen (puede ser muy grande)</div>
+        </div>
+      </label>
+
+      <div>
+        <div class="form-label" style="margin-bottom:6px">Etiqueta (opcional)</div>
+        <input id="bk-label" type="text" placeholder="ej. antes de actualizar"
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);
+                 color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeBackupConfig()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmBackup()">▶ Iniciar backup</button>
     </div>
   </div>
 </div>
