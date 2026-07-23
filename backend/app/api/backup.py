@@ -68,6 +68,70 @@ def get_manifest(backup_name: str) -> dict:
     return manifest
 
 
+@router.get("/storage")
+def storage_info() -> dict:
+    """Disk usage for the backup volume: free space + orphaned partial backups."""
+    backup_dir = settings.backup_dir
+    result: dict = {"free_bytes": None, "free_human": None, "orphans": []}
+    try:
+        st = os.statvfs(str(backup_dir))
+        free = st.f_bavail * st.f_frsize
+        result["free_bytes"] = free
+        result["free_human"] = humanize.naturalsize(free)
+    except Exception:
+        pass
+
+    if backup_dir.exists():
+        for p in backup_dir.iterdir():
+            if p.is_dir() and p.name.startswith("backup_"):
+                size = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                result["orphans"].append({
+                    "name": p.name,
+                    "size_bytes": size,
+                    "size_human": humanize.naturalsize(size),
+                })
+        for p in backup_dir.glob("backup_*.tar.gz"):
+            sha = backup_dir / f"{p.stem}.sha256"
+            if not sha.exists():
+                size = p.stat().st_size
+                result["orphans"].append({
+                    "name": p.name,
+                    "size_bytes": size,
+                    "size_human": humanize.naturalsize(size),
+                    "partial": True,
+                })
+    return result
+
+
+@router.delete("/orphans")
+def delete_orphans() -> dict:
+    """Remove all orphaned partial backup files/dirs from the backup volume."""
+    backup_dir = settings.backup_dir
+    removed = []
+    errors = []
+    if not backup_dir.exists():
+        return {"removed": removed, "errors": errors}
+
+    for p in list(backup_dir.iterdir()):
+        if p.is_dir() and p.name.startswith("backup_"):
+            try:
+                shutil.rmtree(p)
+                removed.append(p.name)
+            except Exception as e:
+                errors.append(f"{p.name}: {e}")
+
+    for p in list(backup_dir.glob("backup_*.tar.gz")):
+        sha = backup_dir / f"{p.stem}.sha256"
+        if not sha.exists():
+            try:
+                p.unlink()
+                removed.append(p.name)
+            except Exception as e:
+                errors.append(f"{p.name}: {e}")
+
+    return {"removed": removed, "errors": errors}
+
+
 @router.delete("/{backup_name}")
 def delete_backup(backup_name: str):
     archive = settings.backup_dir / f"{backup_name}.tar.gz"
@@ -152,67 +216,3 @@ async def start_backup(req: BackupRequest) -> dict:
     return {"job_id": job.id}
 
 
-@router.get("/storage")
-def storage_info() -> dict:
-    """Disk usage for the backup volume: free space + orphaned partial backups."""
-    backup_dir = settings.backup_dir
-    result: dict = {"free_bytes": None, "free_human": None, "orphans": []}
-    try:
-        st = os.statvfs(str(backup_dir))
-        free = st.f_bavail * st.f_frsize
-        result["free_bytes"] = free
-        result["free_human"] = humanize.naturalsize(free)
-    except Exception:
-        pass
-
-    # Orphaned work directories (backup_* dirs that are not .tar.gz)
-    if backup_dir.exists():
-        for p in backup_dir.iterdir():
-            if p.is_dir() and p.name.startswith("backup_"):
-                size = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
-                result["orphans"].append({
-                    "name": p.name,
-                    "size_bytes": size,
-                    "size_human": humanize.naturalsize(size),
-                })
-        # Also orphaned partial .tar.gz without matching .sha256
-        for p in backup_dir.glob("backup_*.tar.gz"):
-            sha = backup_dir / f"{p.stem}.sha256"
-            if not sha.exists():
-                size = p.stat().st_size
-                result["orphans"].append({
-                    "name": p.name,
-                    "size_bytes": size,
-                    "size_human": humanize.naturalsize(size),
-                    "partial": True,
-                })
-    return result
-
-
-@router.delete("/orphans")
-def delete_orphans() -> dict:
-    """Remove all orphaned partial backup files/dirs from the backup volume."""
-    backup_dir = settings.backup_dir
-    removed = []
-    errors = []
-    if not backup_dir.exists():
-        return {"removed": removed, "errors": errors}
-
-    for p in list(backup_dir.iterdir()):
-        if p.is_dir() and p.name.startswith("backup_"):
-            try:
-                shutil.rmtree(p)
-                removed.append(p.name)
-            except Exception as e:
-                errors.append(f"{p.name}: {e}")
-
-    for p in list(backup_dir.glob("backup_*.tar.gz")):
-        sha = backup_dir / f"{p.stem}.sha256"
-        if not sha.exists():
-            try:
-                p.unlink()
-                removed.append(p.name)
-            except Exception as e:
-                errors.append(f"{p.name}: {e}")
-
-    return {"removed": removed, "errors": errors}
