@@ -892,6 +892,45 @@ async function loadBackups() {
   } catch (e) {
     list.innerHTML = `<div class="alert error">Failed to load backups: ${e.message}</div>`;
   }
+  // Load storage info (free space + orphans) in background
+  _refreshStorageBanner();
+}
+
+async function _refreshStorageBanner() {
+  const banner = document.getElementById('backup-storage-banner');
+  if (!banner) return;
+  try {
+    const s = await API.backups.storage();
+    const parts = [];
+    if (s.free_bytes != null) {
+      const cls = s.free_bytes < 500 * 1024 * 1024 ? 'error' : s.free_bytes < 5 * 1024 ** 3 ? 'warning' : '';
+      parts.push(`<span${cls ? ` style="color:var(--${cls})"` : ''}>💾 Libre: <strong>${s.free_human}</strong></span>`);
+    }
+    if (s.orphans?.length) {
+      const totalOrphan = s.orphans.reduce((a, o) => a + (o.size_bytes || 0), 0);
+      const humanOrphan = _humanSize(totalOrphan);
+      parts.push(`<span style="color:var(--warning)">⚠️ Archivos parciales: <strong>${humanOrphan}</strong>
+        <button class="btn btn-outline btn-sm" onclick="cleanOrphans()" style="margin-left:8px">🗑 Limpiar</button>
+      </span>`);
+    }
+    banner.innerHTML = parts.length
+      ? `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:13px">${parts.join('<span style="color:var(--border)">|</span>')}</div>`
+      : '';
+  } catch (_) {
+    banner.innerHTML = '';
+  }
+}
+
+async function cleanOrphans() {
+  if (!confirm('¿Eliminar todos los archivos parciales de backup? Esto liberará espacio.')) return;
+  try {
+    const r = await API.backups.deleteOrphans();
+    showToast(`Limpiados: ${r.removed.length} archivo(s)`, 'success');
+    if (r.errors?.length) showToast(r.errors.join('\n'), 'warning');
+    _refreshStorageBanner();
+  } catch (e) {
+    showToast(`Error al limpiar: ${e.message}`, 'error');
+  }
 }
 
 function _backupItem(b) {

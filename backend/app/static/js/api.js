@@ -45,6 +45,8 @@ const API = {
     manifest: (name) => API.get(`/api/backups/${name}/manifest`),
     delete: (name) => API.del(`/api/backups/${name}`),
     start: (body) => API.post('/api/backups/start', body),
+    storage: () => API.get('/api/backups/storage'),
+    deleteOrphans: () => API.del('/api/backups/orphans'),
   },
   restore: {
     start: (body) => API.post('/api/restore/start', body),
