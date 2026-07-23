@@ -1684,17 +1684,18 @@ function closeUpdateConfirm() {
 
 async function confirmUpdate() {
   if (!_updatePending) return;
+  const pending = _updatePending;
   const opt = document.querySelector('[name="upd-backup-opt"]:checked')?.value ?? 'auto';
   const backupFirst = opt !== 'none';
   closeUpdateConfirm();
   try {
     let job_id;
-    if (_updatePending.type === 'all') {
-      ({ job_id } = await API.updates.startAll({ container_ids: _updatePending.containerIds, backup_first: backupFirst }));
-      openJobModal(job_id, `Update masivo — ${_updatePending.containerIds.length} contenedores`);
+    if (pending.type === 'all') {
+      ({ job_id } = await API.updates.startAll({ container_ids: pending.containerIds, backup_first: backupFirst }));
+      openJobModal(job_id, `Update masivo — ${pending.containerIds.length} contenedores`);
     } else {
-      ({ job_id } = await API.updates.start({ container_id: _updatePending.containerId, backup_first: backupFirst }));
-      openJobModal(job_id, `Update: ${_updatePending.name}`);
+      ({ job_id } = await API.updates.start({ container_id: pending.containerId, backup_first: backupFirst }));
+      openJobModal(job_id, `Update: ${pending.name}`);
     }
     window._scheduleJobPoll?.();
   } catch (e) {
