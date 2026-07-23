@@ -1,8 +1,9 @@
 """Orchestrates a full backup job."""
+import asyncio
 import hashlib
 import json
+import os
 import shutil
-import socket
 import tarfile
 from datetime import datetime
 from pathlib import Path
@@ -25,7 +26,13 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-async def run_backup(job: Job, container_ids: list[str], include_images: bool, label: str | None, excluded_bind_mounts: list[str] | None = None):
+async def run_backup(
+    job: Job,
+    container_ids: list[str],
+    include_images: bool,
+    label: str | None,
+    excluded_bind_mounts: list[str] | None = None,
+):
     job.started_at = datetime.utcnow()
     job.status = JobStatus.running
 
@@ -33,142 +40,178 @@ async def run_backup(job: Job, container_ids: list[str], include_images: bool, l
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     backup_name = f"backup_{ts}_{backup_id}"
     work_dir = settings.backup_dir / backup_name
+    archive_path = settings.backup_dir / f"{backup_name}.tar.gz"
     work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Quick free-space sanity check
+    try:
+        stat = os.statvfs(str(settings.backup_dir))
+        free_bytes = stat.f_bavail * stat.f_frsize
+        free_gb = free_bytes / 1024 ** 3
+        if free_gb < 0.5:
+            raise RuntimeError(
+                f"Espacio libre insuficiente en el destino de backup: "
+                f"{free_gb:.1f} GB disponibles. Libera espacio o cambia el destino."
+            )
+        elif free_gb < 5:
+            await job.log(
+                LogLevel.warning,
+                f"Espacio libre bajo en el destino de backup: {free_gb:.1f} GB. "
+                "El backup puede fallar si los datos son grandes.",
+            )
+    except RuntimeError:
+        raise
+    except Exception:
+        pass  # statvfs not available in some environments
 
     containers_dir = work_dir / "containers"
     volumes_dir = work_dir / "volumes"
     databases_dir = work_dir / "databases"
     images_dir = work_dir / "images"
     networks_dir = work_dir / "networks"
-
     for d in [containers_dir, volumes_dir, databases_dir, images_dir, networks_dir]:
         d.mkdir(exist_ok=True)
 
-    client = get_docker()
-    total = len(container_ids)
-    manifest = {
-        "id": backup_id,
-        "label": label,
-        "created_at": datetime.utcnow().isoformat(),
-        "comeback_version": "1.0.0",
-        "source_hostname": settings.effective_instance_name,
-        "containers": [],
-        "volumes": [],
-        "databases": [],
-        "images": [],
-        "networks": [],
-    }
-
-    await job.log(LogLevel.info, f"Starting backup of {total} container(s)")
-    await job.set_progress(5, "Initializing...")
-
-    # Networks
-    await job.log(LogLevel.info, "Saving network configurations")
     try:
-        nets = export_networks(networks_dir)
-        manifest["networks"] = nets
-    except Exception as e:
-        await job.log(LogLevel.warning, f"Networks export error: {e}")
+        client = get_docker()
+        total = len(container_ids)
+        manifest = {
+            "id": backup_id,
+            "label": label,
+            "created_at": datetime.utcnow().isoformat(),
+            "comeback_version": "1.0.0",
+            "source_hostname": settings.effective_instance_name,
+            "containers": [],
+            "volumes": [],
+            "databases": [],
+            "images": [],
+            "networks": [],
+        }
 
-    all_volumes: list[dict] = []
+        await job.log(LogLevel.info, f"Starting backup of {total} container(s)")
+        await job.set_progress(5, "Initializing...")
 
-    for idx, cid in enumerate(container_ids):
-        pct = 10 + int((idx / total) * 70)
-        await job.set_progress(pct, f"Processing {cid}...")
-
+        # Networks
+        await job.log(LogLevel.info, "Saving network configurations")
         try:
-            c = client.containers.get(cid)
-        except Exception:
-            await job.log(LogLevel.error, f"Container not found: {cid}")
-            continue
-
-        container_name = c.name
-        await job.log(LogLevel.info, f"[{idx+1}/{total}] Container: {container_name}")
-
-        # Container spec
-        try:
-            spec = export_container_spec(cid, containers_dir)
-            manifest["containers"].append({
-                "name": container_name,
-                "image": spec["image"],
-                "spec_file": f"containers/{container_name.lstrip('/')}.json",
-            })
+            nets = export_networks(networks_dir)
+            manifest["networks"] = nets
         except Exception as e:
-            await job.log(LogLevel.error, f"Spec export failed: {e}")
-            continue
+            await job.log(LogLevel.warning, f"Networks export error: {e}")
 
-        # Volumes
-        mounts = spec.get("mounts", [])
-        if mounts:
-            await job.log(LogLevel.info, f"Found {len(mounts)} mount(s): {[m.get('name') or m.get('source') for m in mounts]}")
-        else:
-            await job.log(LogLevel.info, "No volumes or bind mounts found for this container")
-        vol_results = await backup_all_volumes(spec, volumes_dir, job, settings.host_root, excluded_bind_mounts)
-        all_volumes.extend(vol_results)
+        all_volumes: list[dict] = []
 
-        # Databases
-        db_type = detect_db_type(spec["image"])
-        if db_type and c.status == "running":
-            db_result = await dump_database(
-                container_name, db_type,
-                spec["config"].get("Env") or [],
-                databases_dir, job
-            )
-            if db_result:
-                manifest["databases"].append(db_result)
+        for idx, cid in enumerate(container_ids):
+            pct = 10 + int((idx / total) * 70)
+            await job.set_progress(pct, f"Processing {cid}...")
 
-        # Images (optional)
-        if include_images:
-            image_file = images_dir / f"{container_name}.tar"
-            await job.log(LogLevel.info, f"Saving image for {container_name}...")
             try:
-                img = client.images.get(spec["image"])
-                with open(image_file, "wb") as f:
-                    for chunk in img.save():
-                        f.write(chunk)
-                manifest["images"].append({
-                    "container": container_name,
+                c = client.containers.get(cid)
+            except Exception:
+                await job.log(LogLevel.error, f"Container not found: {cid}")
+                continue
+
+            container_name = c.name
+            await job.log(LogLevel.info, f"[{idx+1}/{total}] Container: {container_name}")
+
+            # Container spec
+            try:
+                spec = export_container_spec(cid, containers_dir)
+                manifest["containers"].append({
+                    "name": container_name,
                     "image": spec["image"],
-                    "file": f"images/{container_name}.tar",
+                    "spec_file": f"containers/{container_name.lstrip('/')}.json",
                 })
             except Exception as e:
-                await job.log(LogLevel.warning, f"Image save failed: {e}")
+                await job.log(LogLevel.error, f"Spec export failed: {e}")
+                continue
 
-    manifest["volumes"] = all_volumes
+            # Volumes
+            mounts = spec.get("mounts", [])
+            if mounts:
+                await job.log(LogLevel.info, f"Found {len(mounts)} mount(s): {[m.get('name') or m.get('source') for m in mounts]}")
+            else:
+                await job.log(LogLevel.info, "No volumes or bind mounts found for this container")
+            vol_results = await backup_all_volumes(spec, volumes_dir, job, settings.host_root, excluded_bind_mounts)
+            all_volumes.extend(vol_results)
 
-    # Write manifest
-    await job.set_progress(85, "Writing manifest...")
-    manifest_path = work_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+            # Databases
+            db_type = detect_db_type(spec["image"])
+            if db_type and c.status == "running":
+                db_result = await dump_database(
+                    container_name, db_type,
+                    spec["config"].get("Env") or [],
+                    databases_dir, job,
+                )
+                if db_result:
+                    manifest["databases"].append(db_result)
 
-    # Create final archive
-    await job.set_progress(90, "Compressing backup bundle...")
-    archive_path = settings.backup_dir / f"{backup_name}.tar.gz"
-    with tarfile.open(archive_path, "w:gz") as tar:
-        tar.add(work_dir, arcname=backup_name)
+            # Images (optional)
+            if include_images:
+                image_file = images_dir / f"{container_name}.tar"
+                await job.log(LogLevel.info, f"Saving image for {container_name}...")
+                try:
+                    img = client.images.get(spec["image"])
+                    with open(image_file, "wb") as f:
+                        for chunk in img.save():
+                            f.write(chunk)
+                    manifest["images"].append({
+                        "container": container_name,
+                        "image": spec["image"],
+                        "file": f"images/{container_name}.tar",
+                    })
+                except Exception as e:
+                    await job.log(LogLevel.warning, f"Image save failed: {e}")
 
-    # Checksum
-    checksum = _sha256_file(archive_path)
-    checksum_path = settings.backup_dir / f"{backup_name}.sha256"
-    checksum_path.write_text(f"{checksum}  {archive_path.name}\n")
+        manifest["volumes"] = all_volumes
 
-    # Update manifest inside archive with checksum (append to json)
-    manifest["checksum"] = checksum
-    manifest["size_bytes"] = archive_path.stat().st_size
-    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+        # Write manifest
+        await job.set_progress(85, "Writing manifest...")
+        manifest_path = work_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
 
-    # Cleanup working dir
-    shutil.rmtree(work_dir)
+        # Create final archive
+        await job.set_progress(90, "Compressing backup bundle...")
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(work_dir, arcname=backup_name)
 
-    size_mb = archive_path.stat().st_size / 1024 / 1024
-    await job.set_progress(100, "Done")
-    await job.log(LogLevel.success, f"Backup complete: {archive_path.name} ({size_mb:.1f} MB)")
+        # Checksum
+        checksum = _sha256_file(archive_path)
+        checksum_path = settings.backup_dir / f"{backup_name}.sha256"
+        checksum_path.write_text(f"{checksum}  {archive_path.name}\n")
 
-    await job.finish(JobStatus.success, {
-        "backup_id": backup_id,
-        "backup_name": backup_name,
-        "archive": archive_path.name,
-        "checksum": checksum,
-        "size_bytes": archive_path.stat().st_size,
-        "containers": len(manifest["containers"]),
-    })
+        manifest["checksum"] = checksum
+        manifest["size_bytes"] = archive_path.stat().st_size
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+        shutil.rmtree(work_dir)
+
+        size_mb = archive_path.stat().st_size / 1024 / 1024
+        await job.set_progress(100, "Done")
+        await job.log(LogLevel.success, f"Backup complete: {archive_path.name} ({size_mb:.1f} MB)")
+
+        await job.finish(JobStatus.success, {
+            "backup_id": backup_id,
+            "backup_name": backup_name,
+            "archive": archive_path.name,
+            "checksum": checksum,
+            "size_bytes": archive_path.stat().st_size,
+            "containers": len(manifest["containers"]),
+        })
+
+    except (Exception, asyncio.CancelledError) as exc:
+        # Cleanup any partial artifacts so they don't litter the backup directory
+        for path in [work_dir, archive_path, settings.backup_dir / f"{backup_name}.sha256"]:
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                elif path.exists():
+                    path.unlink()
+            except Exception:
+                pass
+        if isinstance(exc, asyncio.CancelledError):
+            await job.log(LogLevel.warning, "Backup cancelado por el usuario")
+            await job.finish(JobStatus.cancelled, {})
+        else:
+            await job.log(LogLevel.error, f"Backup fallido: {exc}")
+            await job.finish(JobStatus.failed, {"error": str(exc)})

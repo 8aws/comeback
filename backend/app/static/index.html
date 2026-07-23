@@ -435,6 +435,7 @@
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         <span class="job-status-inline job-status running">running</span>
+        <button class="btn btn-outline btn-sm job-minimize-btn" onclick="minimizeJob()" title="Minimizar">⬇</button>
         <button class="modal-close" aria-label="Close">×</button>
       </div>
     </div>
@@ -621,6 +622,55 @@
       <button class="btn btn-danger" onclick="doLogout()" style="justify-content:center">🚪 Cerrar sesión</button>
     </div>
   </div>
+</div>
+
+<!-- Update confirm modal -->
+<div id="update-confirm-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <h3>⬆️ Confirmar actualización</h3>
+      <button class="modal-close" onclick="closeUpdateConfirm()">×</button>
+    </div>
+    <div class="modal-body" style="display:grid;gap:14px">
+      <div id="update-confirm-target" class="text-muted text-sm"></div>
+      <div class="form-label" style="margin-bottom:4px">Backup previo</div>
+      <label class="form-check" style="cursor:pointer">
+        <input type="radio" name="upd-backup-opt" value="auto" checked>
+        <div>
+          <div>Hacer backup automático</div>
+          <div class="text-sm text-muted">Excluye automáticamente bind mounts grandes (umbral de Ajustes)</div>
+        </div>
+      </label>
+      <label class="form-check" style="cursor:pointer">
+        <input type="radio" name="upd-backup-opt" value="none">
+        <div>
+          <div>Sin backup</div>
+          <div class="text-sm text-muted" style="color:var(--warning)">⚠️ Sin red de seguridad — sólo si tienes un backup reciente</div>
+        </div>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeUpdateConfirm()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmUpdate()">⬆️ Actualizar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Job minimized bar -->
+<div id="job-mini-bar" style="
+  display:none; position:fixed; bottom:16px; right:16px; z-index:9000;
+  background:var(--surface2); border:1px solid var(--border); border-radius:10px;
+  padding:10px 14px; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,.4);
+  display:none; align-items:center; gap:10px; min-width:220px; max-width:320px">
+  <div class="spinner" id="job-mini-spinner"></div>
+  <span id="job-mini-icon" style="font-size:18px;display:none"></span>
+  <div style="flex:1;min-width:0">
+    <div id="job-mini-title" class="text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+    <div class="progress-bar-container" style="margin-top:4px;height:3px">
+      <div id="job-mini-bar-fill" class="progress-bar" style="width:0%;height:3px"></div>
+    </div>
+  </div>
+  <button onclick="maximizeJob(event)" title="Ampliar" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px">⬆</button>
 </div>
 
 <!-- Backup config modal -->

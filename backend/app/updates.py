@@ -28,6 +28,7 @@ from .docker_client import get_docker
 from .job_manager import Job, job_manager
 from .models import JobStatus, JobType, LogLevel
 from .restore.manager import _build_run_kwargs
+from . import ui_settings
 
 
 def _self_container_id() -> str:
@@ -75,7 +76,10 @@ async def _check_one(c, self_id: str) -> dict:
         remote_digest = reg_data.id
         entry["status"] = "current" if remote_digest in local else "update"
         if entry["status"] == "update":
-            entry["detail"] = f"Nuevo digest: {remote_digest[:19]}…"
+            # Show short digests so the user can see something changed
+            local_short = next(iter(local), "")[:19] if local else "local"
+            remote_short = remote_digest[:19]
+            entry["detail"] = f"Local: {local_short}… → Remoto: {remote_short}…"
     except Exception as e:
         msg = str(e)
         if "denied" in msg or "unauthorized" in msg or "not found" in msg.lower():
@@ -143,9 +147,38 @@ async def _update_one(job: Job, container_id: str, backup_first: bool) -> dict:
 
     # ── Optional pre-update backup (child job) ───────────────────────────────
     if backup_first:
+        # Auto-exclude bind mounts larger than the configured threshold
+        excluded_binds: list[str] = []
+        try:
+            s = ui_settings.load()
+            max_bytes = int(s.get("max_bind_mount_backup_gb", 10)) * 1024 ** 3
+            c_inspect = await loop.run_in_executor(None, lambda: client.containers.get(container_id))
+            bind_sources = [
+                m.get("Source", "")
+                for m in (c_inspect.attrs.get("Mounts") or [])
+                if m.get("Type") == "bind" and m.get("Source")
+            ]
+            for src in bind_sources:
+                host_path = Path(settings.host_root) / src.lstrip("/")
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "du", "-s", "--block-size=1", str(host_path),
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                    size = int(stdout.decode().split()[0])
+                    if size > max_bytes:
+                        excluded_binds.append(src)
+                        await job.log(LogLevel.warning,
+                            f"Bind mount excluido del backup (>{s.get('max_bind_mount_backup_gb')} GB): {src}")
+                except Exception:
+                    pass  # if du fails/times out, include the mount
+        except Exception:
+            pass
+
         backup_job = job_manager.create(JobType.backup, f"Pre-update: {name}")
         await job.log(LogLevel.info, f"Backup previo iniciado (job {backup_job.id[:8]})")
-        await run_backup(backup_job, [container_id], False, f"pre-update {name}")
+        await run_backup(backup_job, [container_id], False, f"pre-update {name}", excluded_binds)
         if backup_job.status != JobStatus.success:
             raise RuntimeError("El backup previo falló — actualización cancelada")
         await job.log(LogLevel.success, "Backup previo completado")

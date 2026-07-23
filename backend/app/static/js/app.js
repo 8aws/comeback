@@ -99,6 +99,24 @@ function openJobModal(jobId, title) {
 
   modal.style.display = 'flex';
 
+  // Wire minimize button visibility (only during running)
+  const minimizeBtn = modal.querySelector('.job-minimize-btn');
+  if (minimizeBtn) minimizeBtn.style.display = '';
+
+  // Mini-bar sync
+  const miniBar = document.getElementById('job-mini-bar');
+  const miniTitle = document.getElementById('job-mini-title');
+  const miniBarFill = document.getElementById('job-mini-bar-fill');
+  const miniSpinner = document.getElementById('job-mini-spinner');
+  const miniIcon = document.getElementById('job-mini-icon');
+  if (miniBar) {
+    miniBar.style.display = 'none';
+    miniTitle.textContent = title;
+    miniBarFill.style.width = '0%';
+    miniSpinner.style.display = '';
+    miniIcon.style.display = 'none';
+  }
+
   let ws = null;
   let pollInterval = null;
   let lastLogCount = 0;
@@ -126,6 +144,7 @@ function openJobModal(jobId, title) {
     } else if (msg.type === 'progress') {
       progressBar.style.width = msg.pct + '%';
       progressPct.textContent = msg.pct + '%';
+      if (miniBarFill) miniBarFill.style.width = msg.pct + '%';
     } else if (msg.type === 'finished') {
       onFinished(msg.status);
     }
@@ -139,10 +158,19 @@ function openJobModal(jobId, title) {
     statusEl.textContent = status;
     statusEl.className = `job-status-inline job-status ${status}`;
     spinner.style.display = 'none';
-    resultIcon.textContent = status === 'success' ? '✅' : status === 'failed' ? '❌' : status === 'cancelled' ? '🛑' : '⚠️';
+    const icon = status === 'success' ? '✅' : status === 'failed' ? '❌' : status === 'cancelled' ? '🛑' : '⚠️';
+    resultIcon.textContent = icon;
     resultIcon.style.display = '';
     cancelBtn.style.display = 'none';
+    if (minimizeBtn) minimizeBtn.style.display = 'none';
     okBtn.style.display = '';
+    // Sync mini-bar finish state
+    if (miniBar) {
+      miniSpinner.style.display = 'none';
+      miniIcon.textContent = icon;
+      miniIcon.style.display = '';
+      miniBarFill.style.width = status === 'success' ? '100%' : miniBarFill.style.width;
+    }
     stopPolling();
     if (state.tab === 'backup' || state.tab === 'restore') loadBackups();
     if (state.tab === 'updates') loadUpdates();
@@ -211,9 +239,13 @@ function openJobModal(jobId, title) {
   const closeModal = () => {
     stopPolling();
     modal.style.display = 'none';
+    if (miniBar) miniBar.style.display = 'none';
   };
   modal.querySelector('.modal-close').onclick = closeModal;
   okBtn.onclick = closeModal;
+
+  // Store reference for minimize/maximize
+  window._activeJobModal = { modal, miniBar, title, jobId };
 
   cancelBtn.onclick = async () => {
     if (!confirm('¿Cancelar el job en curso?')) return;
@@ -227,6 +259,51 @@ function openJobModal(jobId, title) {
       cancelBtn.textContent = '✕ Cancelar';
     }
   };
+}
+
+function minimizeJob() {
+  const ref = window._activeJobModal;
+  if (!ref) return;
+  ref.modal.style.display = 'none';
+  if (ref.miniBar) ref.miniBar.style.display = 'flex';
+}
+
+function maximizeJob(e) {
+  if (e) e.stopPropagation();
+  const ref = window._activeJobModal;
+  if (!ref) return;
+  if (ref.miniBar) ref.miniBar.style.display = 'none';
+  ref.modal.style.display = 'flex';
+}
+
+// ─── CONTAINER ICON HELPERS ───────────────────────────────────────────────────
+const _iconCache = {};
+
+function _containerIcon(c) {
+  // 1. Cosmos-style icon label
+  const cosIcon = c.labels?.['cosmos-icon'] || c.labels?.['com.cosmos.icon'];
+  if (cosIcon) return `<img src="${escapeHtml(cosIcon)}" style="width:28px;height:28px;border-radius:4px;object-fit:contain" onerror="this.style.display='none'">`;
+  // 2. OCI image icon label
+  const ociIcon = c.labels?.['org.opencontainers.image.logo'];
+  if (ociIcon) return `<img src="${escapeHtml(ociIcon)}" style="width:28px;height:28px;border-radius:4px;object-fit:contain" onerror="this.style.display='none'">`;
+  // 3. Docker Hub favicon (best effort, silently fails if private/local)
+  const image = (c.image || '').split(':')[0].split('/');
+  const repo = image.length >= 2 ? image.slice(-2).join('/') : '';
+  if (repo && !repo.includes('localhost') && !repo.includes('sha256')) {
+    const hub = `https://hub.docker.com/api/content/v1/products/images/${repo}`;
+    if (!_iconCache[repo]) {
+      _iconCache[repo] = null; // mark as pending
+      fetch(hub).then(r => r.json()).then(d => {
+        if (d?.logo_url?.large) _iconCache[repo] = d.logo_url.large;
+      }).catch(() => { _iconCache[repo] = ''; });
+    }
+    if (_iconCache[repo]) {
+      return `<img src="${escapeHtml(_iconCache[repo])}" style="width:28px;height:28px;border-radius:4px;object-fit:contain" onerror="this.style.display='none'">`;
+    }
+  }
+  // 4. Fallback emoji by db type or default
+  const emojis = { mysql:'🐬', mariadb:'🐬', postgres:'🐘', mongodb:'🍃', redis:'⚡', elasticsearch:'🔍', influxdb:'📈' };
+  return `<span style="font-size:22px">${emojis[c.db_type] || '📦'}</span>`;
 }
 
 // ─── BACKUP TAB ───────────────────────────────────────────────────────────────
@@ -477,6 +554,7 @@ function _containerItem(c) {
     <div style="display:flex;align-items:center;gap:8px;min-width:0">
       <div class="container-check"></div>
       ${_statusBadge(c)}
+      <div style="flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center">${_containerIcon(c)}</div>
       <div class="container-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name)}</div>
       ${verifyBtn}
       ${favBtn}
@@ -1465,10 +1543,11 @@ function _updateRow(u) {
     <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;width:100%">
       <div style="display:flex;align-items:center;gap:10px;min-width:0">
         ${statusDot(u.running)}
+        <div style="flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center">${_containerIcon(u)}</div>
         <div style="min-width:0">
           <div><strong>${escapeHtml(u.name)}</strong>${u.is_self ? ' ' + badge('comeback', '') : ''}</div>
           <div class="text-muted text-sm" style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(u.image)}</div>
-          ${u.detail ? `<div class="text-muted text-sm">${escapeHtml(u.detail)}</div>` : ''}
+          ${u.detail ? `<div class="text-sm" style="color:var(--warning)">${escapeHtml(u.detail)}</div>` : ''}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
@@ -1545,28 +1624,51 @@ async function loadUpdates() {
   }
 }
 
-async function startUpdateAll(containerIds) {
-  const backupFirst = document.getElementById('update-backup-first').checked;
-  if (!confirm(`¿Actualizar ${containerIds.length} contenedores en serie?${backupFirst ? '\nSe hará backup previo de cada uno.' : '\n⚠️ SIN backups previos.'}`)) return;
+// ─── UPDATE CONFIRM MODAL ─────────────────────────────────────────────────────
+let _updatePending = null;  // {type:'single'|'all', containerId?, name?, containerIds?}
+
+function openUpdateConfirm(type, payload) {
+  _updatePending = { type, ...payload };
+  const label = type === 'all'
+    ? `${payload.containerIds.length} contenedores en serie`
+    : `"${payload.name}"`;
+  document.getElementById('update-confirm-target').textContent = `Actualizar: ${label}`;
+  // Reset radio
+  document.querySelector('[name="upd-backup-opt"][value="auto"]').checked = true;
+  document.getElementById('update-confirm-modal').style.display = 'flex';
+}
+
+function closeUpdateConfirm() {
+  document.getElementById('update-confirm-modal').style.display = 'none';
+  _updatePending = null;
+}
+
+async function confirmUpdate() {
+  if (!_updatePending) return;
+  const opt = document.querySelector('[name="upd-backup-opt"]:checked')?.value ?? 'auto';
+  const backupFirst = opt !== 'none';
+  closeUpdateConfirm();
   try {
-    const { job_id } = await API.updates.startAll({ container_ids: containerIds, backup_first: backupFirst });
-    openJobModal(job_id, `Update masivo — ${containerIds.length} contenedores`);
+    let job_id;
+    if (_updatePending.type === 'all') {
+      ({ job_id } = await API.updates.startAll({ container_ids: _updatePending.containerIds, backup_first: backupFirst }));
+      openJobModal(job_id, `Update masivo — ${_updatePending.containerIds.length} contenedores`);
+    } else {
+      ({ job_id } = await API.updates.start({ container_id: _updatePending.containerId, backup_first: backupFirst }));
+      openJobModal(job_id, `Update: ${_updatePending.name}`);
+    }
     window._scheduleJobPoll?.();
   } catch (e) {
     showToast(`Update error: ${e.message}`, 'error');
   }
 }
 
+async function startUpdateAll(containerIds) {
+  openUpdateConfirm('all', { containerIds });
+}
+
 async function startUpdate(containerId, name) {
-  const backupFirst = document.getElementById('update-backup-first').checked;
-  if (!confirm(`¿Actualizar "${name}"?${backupFirst ? '\nSe hará un backup previo.' : '\n⚠️ SIN backup previo.'}`)) return;
-  try {
-    const { job_id } = await API.updates.start({ container_id: containerId, backup_first: backupFirst });
-    openJobModal(job_id, `Update: ${name}`);
-    window._scheduleJobPoll?.();
-  } catch (e) {
-    showToast(`Update error: ${e.message}`, 'error');
-  }
+  openUpdateConfirm('single', { containerId, name });
 }
 
 // ─── JOBS TAB ─────────────────────────────────────────────────────────────────
